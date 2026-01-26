@@ -15,6 +15,12 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+mod dns;
+mod proxy;
+
+use dns::ProxyServiceStatus;
+use proxy::{ProxyRoute, ProxyState};
+
 // App data structure matching our SQLite schema
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct App {
@@ -25,6 +31,7 @@ pub struct App {
     pub port: Option<i32>,
     pub run_on_startup: bool,
     pub created_at: String,
+    pub subdomain: Option<String>,
 }
 
 // Running process info
@@ -269,9 +276,88 @@ async fn get_app_logs(state: State<'_, AppState>, id: String) -> Result<Vec<Stri
 }
 
 #[tauri::command]
-async fn open_in_browser(port: i32) -> Result<(), String> {
-    let url = format!("http://localhost:{}", port);
+async fn open_in_browser(port: i32, subdomain: Option<String>, hostname: Option<String>) -> Result<(), String> {
+    let url = if let (Some(sub), Some(host)) = (subdomain, hostname) {
+        format!("http://{}.{}.local", sub, host)
+    } else {
+        format!("http://localhost:{}", port)
+    };
     open::that(&url).map_err(|e| format!("Failed to open browser: {}", e))
+}
+
+// ============ Proxy Commands ============
+
+#[tauri::command]
+fn get_hostname() -> String {
+    dns::get_local_hostname()
+}
+
+#[tauri::command]
+fn slugify_name(name: String) -> String {
+    proxy::slugify(&name)
+}
+
+#[tauri::command]
+async fn add_proxy_route(
+    proxy_state: State<'_, ProxyState>,
+    app_id: String,
+    subdomain: String,
+    port: i32,
+) -> Result<(), String> {
+    proxy::add_route(&proxy_state, &app_id, &subdomain, port).await
+}
+
+#[tauri::command]
+async fn remove_proxy_route(
+    proxy_state: State<'_, ProxyState>,
+    app_id: String,
+) -> Result<(), String> {
+    proxy::remove_route(&proxy_state, &app_id).await
+}
+
+#[tauri::command]
+async fn get_proxy_routes(
+    proxy_state: State<'_, ProxyState>,
+) -> Result<HashMap<String, ProxyRoute>, String> {
+    let routes = proxy_state.routes.lock().await;
+    Ok(routes.clone())
+}
+
+#[tauri::command]
+fn get_app_url(subdomain: String, hostname: String) -> String {
+    proxy::get_app_url(&subdomain, &hostname)
+}
+
+#[tauri::command]
+async fn is_proxy_service_running() -> Result<bool, String> {
+    Ok(proxy::is_caddy_responsive().await)
+}
+
+// ============ Proxy Service (LaunchDaemon) Commands ============
+
+#[tauri::command]
+fn get_proxy_service_status() -> ProxyServiceStatus {
+    dns::get_service_status()
+}
+
+#[tauri::command]
+async fn install_proxy_service(app_handle: AppHandle) -> Result<(), String> {
+    dns::install_service(&app_handle).await
+}
+
+#[tauri::command]
+async fn uninstall_proxy_service(app_handle: AppHandle) -> Result<(), String> {
+    dns::uninstall_service(&app_handle).await
+}
+
+#[tauri::command]
+async fn start_proxy_service() -> Result<(), String> {
+    dns::start_service().await
+}
+
+#[tauri::command]
+async fn stop_proxy_service() -> Result<(), String> {
+    dns::stop_service().await
 }
 
 fn update_tray_menu(app: &AppHandle, apps: Vec<App>, running: &HashMap<String, i32>) {
@@ -334,22 +420,32 @@ async fn refresh_tray(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Define database migrations
-    let migrations = vec![Migration {
-        version: 1,
-        description: "create_apps_table",
-        sql: r#"
-            CREATE TABLE IF NOT EXISTS apps (
-                id TEXT PRIMARY KEY NOT NULL,
-                name TEXT NOT NULL,
-                path TEXT NOT NULL UNIQUE,
-                command TEXT NOT NULL DEFAULT 'bun start',
-                port INTEGER,
-                run_on_startup INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-        "#,
-        kind: MigrationKind::Up,
-    }];
+    let migrations = vec![
+        Migration {
+            version: 1,
+            description: "create_apps_table",
+            sql: r#"
+                CREATE TABLE IF NOT EXISTS apps (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    name TEXT NOT NULL,
+                    path TEXT NOT NULL UNIQUE,
+                    command TEXT NOT NULL DEFAULT 'bun start',
+                    port INTEGER,
+                    run_on_startup INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+            "#,
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 2,
+            description: "add_subdomain_column",
+            sql: r#"
+                ALTER TABLE apps ADD COLUMN subdomain TEXT;
+            "#,
+            kind: MigrationKind::Up,
+        },
+    ];
 
     tauri::Builder::default()
         .plugin(
@@ -365,6 +461,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
+        .manage(ProxyState::default())
         .setup(|app| {
             // Load tray icon from PNG file
             let icon_bytes = include_bytes!("../icons/icon.png");
@@ -405,7 +502,32 @@ pub fn run() {
                             }
                         }
                         "quit" => {
-                            app.exit(0);
+                            // Stop all running apps and clear proxy routes before exiting
+                            let app_state = app.state::<AppState>();
+                            let proxy_state = app.state::<ProxyState>();
+                            
+                            // Clone what we need before the async block
+                            let processes = app_state.processes.clone();
+                            let routes = proxy_state.routes.clone();
+                            let hostname = proxy_state.hostname.clone();
+                            
+                            // Spawn cleanup task
+                            let app_handle = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                // Stop all running processes
+                                let mut procs = processes.lock().await;
+                                for (_, process) in procs.drain() {
+                                    let _ = process.child.kill();
+                                }
+                                
+                                // Clear proxy routes (reset Caddy to default config)
+                                let mut routes_guard = routes.lock().await;
+                                routes_guard.clear();
+                                let _ = proxy::update_routes(&routes_guard, &hostname).await;
+                                
+                                // Exit the app
+                                app_handle.exit(0);
+                            });
                         }
                         _ => {
                             // App item clicked - emit event to open in browser
@@ -449,6 +571,20 @@ pub fn run() {
             get_app_logs,
             open_in_browser,
             refresh_tray,
+            // Proxy commands
+            get_hostname,
+            slugify_name,
+            add_proxy_route,
+            remove_proxy_route,
+            get_proxy_routes,
+            get_app_url,
+            is_proxy_service_running,
+            // Proxy service (LaunchDaemon) commands
+            get_proxy_service_status,
+            install_proxy_service,
+            uninstall_proxy_service,
+            start_proxy_service,
+            stop_proxy_service,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

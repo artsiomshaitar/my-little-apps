@@ -214,6 +214,42 @@ body {
   font-weight: normal;
 }
 
+/* Inline URL badges in app list */
+.url-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  font-family: "SF Mono", Monaco, monospace;
+}
+
+.url-badge {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  font-weight: normal;
+  font-family: "SF Mono", Monaco, monospace;
+}
+
+.url-badge.subdomain {
+  color: var(--success);
+}
+
+.url-badge.subdomain.inactive {
+  color: var(--text-secondary);
+  opacity: 0.6;
+}
+
+.url-badge.localhost {
+  color: var(--text-secondary);
+}
+
+.url-separator {
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+
 .app-actions {
   display: flex;
   gap: 8px;
@@ -281,6 +317,66 @@ body {
   width: 120px;
   color: var(--text-secondary);
   font-size: 0.875rem;
+  flex-shrink: 0;
+}
+
+.info-row.urls {
+  align-items: flex-start;
+}
+
+.url-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.url-link-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.url-link-item code {
+  flex: 1;
+  font-size: 0.8125rem;
+}
+
+.btn-copy {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  background: var(--bg-tertiary);
+  border: none;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  min-width: 55px;
+  transition: all 0.2s;
+}
+
+.btn-copy:hover {
+  color: var(--text-primary);
+  background: var(--bg-primary);
+}
+
+.btn-copy:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.url-link-item.inactive {
+  opacity: 0.6;
+}
+
+.url-link-item.inactive code {
+  text-decoration: line-through;
+  text-decoration-color: var(--text-secondary);
+}
+
+.url-status {
+  font-size: 0.75rem;
+  color: var(--warning);
+  font-style: italic;
 }
 
 .info-row code {
@@ -428,4 +524,150 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
+}
+
+/* Proxy Status */
+.proxy-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: 16px;
+  border-right: 1px solid var(--border);
+}
+
+.status-indicator {
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+}
+
+.status-indicator.active {
+  color: var(--success);
+}
+
+.status-indicator.inactive {
+  color: var(--text-secondary);
+}
+
+/* Subdomain Input */
+.subdomain-input {
+  display: flex;
+  align-items: center;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.subdomain-input input {
+  flex: 1;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.subdomain-suffix {
+  padding: 10px 12px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+/* DNS Setup Modal */
+.dns-setup-modal {
+  max-width: 550px;
+}
+
+.dns-setup-modal p {
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.dns-setup-modal code {
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "SF Mono", Monaco, monospace;
+  font-size: 0.875rem;
+}
+
+.dns-status-details {
+  background: var(--bg-primary);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.dns-status-details h3 {
+  font-size: 0.875rem;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.dns-status-details ul {
+  list-style: none;
+}
+
+.dns-status-details li {
+  padding: 6px 0;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dns-status-details li::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dns-status-details li.ok::before {
+  background: var(--success);
+}
+
+.dns-status-details li.missing::before {
+  background: var(--warning);
+}
+
+.dns-setup-info {
+  background: var(--bg-primary);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.dns-setup-info h3 {
+  font-size: 0.875rem;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.dns-setup-info ul {
+  list-style: disc;
+  margin-left: 20px;
+  color: var(--text-secondary);
+}
+
+.dns-setup-info li {
+  padding: 4px 0;
+  font-size: 0.875rem;
+}
+
+.dns-setup-info .warning {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid var(--warning);
+  border-radius: 6px;
+  color: var(--warning);
+  font-size: 0.8125rem;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
