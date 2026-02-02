@@ -15,7 +15,7 @@ if [ -z "$RESOURCE_DIR" ]; then
 fi
 
 # Configuration
-HOSTNAME=$(hostname | tr '[:upper:]' '[:lower:]' | sed 's/\.local$//')
+HOSTNAME=$(scutil --get LocalHostName 2>/dev/null | tr '[:upper:]' '[:lower:]' || hostname | tr '[:upper:]' '[:lower:]' | sed 's/\.local$//')
 INSTALL_DIR="/usr/local/bin/my-little-apps"
 CONFIG_DIR="/usr/local/etc/my-little-apps"
 LOG_DIR="/usr/local/var/log/my-little-apps"

@@ -31,4 +31,5 @@ tauri-plugin-autostart = "2"
 open = "5"
 image = "0.25"
 reqwest = { version = "0.12", features = ["json"] }
+sysinfo = "0.32"
 

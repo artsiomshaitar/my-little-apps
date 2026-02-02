@@ -16,6 +16,17 @@ pub fn get_local_hostname() -> String {
         return hostname;
     }
 
+    if let Ok(output) = Command::new("scutil")
+        .args(["--get", "LocalHostName"])
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(hostname) = String::from_utf8(output.stdout) {
+                return hostname.trim().to_lowercase();
+            }
+        }
+    }
+
     if let Ok(output) = Command::new("hostname").output() {
         if let Ok(hostname) = String::from_utf8(output.stdout) {
             let hostname = hostname.trim().to_lowercase();

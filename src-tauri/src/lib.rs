@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::TcpListener;
 use std::sync::Arc;
+use sysinfo::{Pid, Signal, System};
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -82,6 +83,31 @@ fn rand_port() -> u32 {
         .unwrap()
         .subsec_nanos();
     nanos
+}
+
+fn kill_process_tree(pid: u32) {
+    let mut system = System::new_all();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
+    fn collect_children(system: &System, pid: Pid, pids: &mut Vec<Pid>) {
+        for (child_pid, process) in system.processes() {
+            if let Some(parent_pid) = process.parent() {
+                if parent_pid == pid {
+                    collect_children(system, *child_pid, pids);
+                    pids.push(*child_pid);
+                }
+            }
+        }
+    }
+
+    let mut pids_to_kill = Vec::new();
+    collect_children(&system, Pid::from_u32(pid), &mut pids_to_kill);
+
+    for pid in pids_to_kill {
+        if let Some(process) = system.process(pid) {
+            process.kill_with(Signal::Term);
+        }
+    }
 }
 
 #[tauri::command]
@@ -240,6 +266,8 @@ async fn stop_app(
     let mut processes = state.processes.lock().await;
 
     if let Some(process) = processes.remove(&id) {
+        kill_process_tree(process.child.pid());
+
         process
             .child
             .kill()
@@ -517,6 +545,7 @@ pub fn run() {
                                 // Stop all running processes
                                 let mut procs = processes.lock().await;
                                 for (_, process) in procs.drain() {
+                                    kill_process_tree(process.child.pid());
                                     let _ = process.child.kill();
                                 }
                                 
