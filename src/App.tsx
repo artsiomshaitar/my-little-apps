@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { confirm } from "@/components/confirm-dialog";
 
 interface App {
   id: string;
@@ -512,13 +513,12 @@ function AppComponent() {
   };
 
   const handleUninstallService = async () => {
-    if (
-      !confirm(
-        "Are you sure you want to uninstall the proxy service? Your apps will only be accessible via localhost:port."
-      )
-    ) {
-      return;
-    }
+    const shouldUninstall = await confirm(
+      "Are you sure you want to uninstall the proxy service? Your apps will only be accessible via localhost:port.",
+      { destructive: true }
+    );
+    if (!shouldUninstall) return;
+
     try {
       await invoke("uninstall_proxy_service");
       const status =
@@ -784,8 +784,12 @@ function AppComponent() {
                     variant="ghost-destructive"
                     size="sm"
                     className="h-7 text-xs"
-                    onClick={() => {
-                      if (confirm("remove this app?")) {
+                    onClick={async () => {
+                      const shouldRemove = await confirm("Remove this app?", {
+                        confirm: "Remove",
+                        destructive: true,
+                      });
+                      if (shouldRemove) {
                         handleRemoveApp(selectedApp.id);
                         setSelectedAppId(null);
                       }
