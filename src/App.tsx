@@ -19,9 +19,7 @@ interface App {
 
 interface ProxyServiceStatus {
   installed: boolean;
-  dnsmasq_running: boolean;
   caddy_running: boolean;
-  hostname: string;
 }
 
 interface ProxyRoute {
@@ -30,7 +28,7 @@ interface ProxyRoute {
 }
 
 interface RunningApps {
-  [id: string]: number; // id -> port
+  [id: string]: number;
 }
 
 interface LogEntry {
@@ -48,15 +46,14 @@ function AppComponent() {
   const [db, setDb] = useState<Database | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
   
-  // Proxy service state
-  const [hostname, setHostname] = useState<string>("");
+  const [lanIp, setLanIp] = useState<string | null>(null);
   const [serviceStatus, setServiceStatus] = useState<ProxyServiceStatus | null>(null);
   const [proxyRoutes, setProxyRoutes] = useState<{ [id: string]: ProxyRoute }>({});
   const [showSetupWizard, setShowSetupWizard] = useState(false);
+  const [showLanInfo, setShowLanInfo] = useState(false);
   const [setupLoading, setSetupLoading] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
-  // Initialize database
   useEffect(() => {
     const initDb = async () => {
       const database = await Database.load("sqlite:my-little-apps.db");
@@ -65,18 +62,18 @@ function AppComponent() {
     initDb();
   }, []);
 
-  // Initialize proxy service
   useEffect(() => {
     const initProxy = async () => {
       try {
         const status = await invoke<ProxyServiceStatus>("get_proxy_service_status");
         setServiceStatus(status);
-        setHostname(status.hostname);
         
         const routes = await invoke<{ [id: string]: ProxyRoute }>("get_proxy_routes");
         setProxyRoutes(routes);
         
-        // Show setup wizard if service not installed
+        const ip = await invoke<string | null>("get_lan_ip");
+        setLanIp(ip);
+        
         if (!status.installed) {
           setShowSetupWizard(true);
         }
@@ -87,19 +84,14 @@ function AppComponent() {
     initProxy();
   }, []);
 
-  // Load apps from database
   const loadApps = useCallback(async () => {
     if (!db) return;
     const result = await db.select<App[]>("SELECT * FROM apps ORDER BY name");
     setApps(result);
-
-    // Refresh tray menu
     invoke("refresh_tray", { apps: result });
-    
     return result;
   }, [db]);
 
-  // Auto-start apps on initial load
   const autoStartApps = useCallback(async (appsToStart: App[], currentRunning: RunningApps) => {
     for (const app of appsToStart) {
       if (app.run_on_startup && !currentRunning[app.id]) {
@@ -110,10 +102,9 @@ function AppComponent() {
             path: app.path,
             command: app.command,
             port,
+            subdomain: app.subdomain,
           });
-          console.log(`Auto-started: ${app.name}`);
           
-          // Add proxy route if subdomain is configured
           if (app.subdomain) {
             try {
               await invoke("add_proxy_route", {
@@ -121,7 +112,6 @@ function AppComponent() {
                 subdomain: app.subdomain,
                 port: actualPort,
               });
-              console.log(`Added proxy route for auto-started app: ${app.subdomain}`);
             } catch (e) {
               console.error(`Failed to add proxy route for ${app.name}:`, e);
             }
@@ -133,7 +123,6 @@ function AppComponent() {
     }
   }, []);
 
-  // Load apps when db is ready and auto-start if needed
   useEffect(() => {
     if (db) {
       const init = async () => {
@@ -141,7 +130,6 @@ function AppComponent() {
         const running = await invoke<RunningApps>("get_running_apps");
         setRunningApps(running);
         
-        // Re-register proxy routes for already running apps and sync state
         const newProxyRoutes: { [id: string]: ProxyRoute } = {};
         if (loadedApps) {
           for (const app of loadedApps) {
@@ -163,7 +151,6 @@ function AppComponent() {
         }
         setProxyRoutes(newProxyRoutes);
         
-        // Auto-start apps marked for startup
         if (loadedApps) {
           await autoStartApps(loadedApps, running);
         }
@@ -172,30 +159,23 @@ function AppComponent() {
     }
   }, [db, loadApps, autoStartApps]);
 
-  // Check autostart status
   useEffect(() => {
     isEnabled().then(setAutoStartEnabled);
   }, []);
 
-  // Auto-scroll logs
   useEffect(() => {
     if (logsEndRef.current && selectedAppId && logs[selectedAppId]?.length) {
       logsEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [logs, selectedAppId]);
 
+  const isProxyOperational = serviceStatus?.installed && serviceStatus?.caddy_running;
 
-
-  // Check if proxy service is fully operational
-  const isProxyOperational = serviceStatus?.installed && serviceStatus?.dnsmasq_running && serviceStatus?.caddy_running;
-
-  // Open in browser (defined early to be used in event listener)
   const handleOpenInBrowser = useCallback((app: App, port: number) => {
     const sub = app.subdomain && isProxyOperational ? app.subdomain : null;
-    invoke("open_in_browser", { port, subdomain: sub, hostname: sub ? hostname : null });
-  }, [isProxyOperational, hostname]);
+    invoke("open_in_browser", { port, subdomain: sub });
+  }, [isProxyOperational]);
 
-  // Listen for app events
   useEffect(() => {
     const unlistenStarted = listen<{ id: string; port: number }>(
       "app-started",
@@ -204,7 +184,7 @@ function AppComponent() {
           ...prev,
           [event.payload.id]: event.payload.port,
         }));
-        loadApps(); // Refresh tray
+        loadApps();
       }
     );
 
@@ -219,7 +199,6 @@ function AppComponent() {
           return next;
         });
         
-        // Remove proxy route when app stops (including crashes)
         try {
           await invoke("remove_proxy_route", { appId });
           setProxyRoutes((prev) => {
@@ -228,10 +207,9 @@ function AppComponent() {
             return next;
           });
         } catch (e) {
-          // Ignore errors - route might not exist
         }
         
-        loadApps(); // Refresh tray
+        loadApps();
       }
     );
 
@@ -246,23 +224,21 @@ function AppComponent() {
               type: event.payload.type as "stdout" | "stderr",
               message: event.payload.message,
             },
-          ].slice(-200), // Keep last 200 entries
+          ].slice(-200),
         }));
       }
     );
 
     const unlistenOpenApp = listen<string>("open-app", async (event) => {
       const appId = event.payload;
-      // Get current running apps from backend since state might be stale
       const currentRunning = await invoke<RunningApps>("get_running_apps");
       const port = currentRunning[appId];
       if (port) {
-        // Find the app to get its subdomain
         const app = apps.find(a => a.id === appId);
         if (app) {
           handleOpenInBrowser(app, port);
         } else {
-          invoke("open_in_browser", { port, subdomain: null, hostname: null });
+          invoke("open_in_browser", { port, subdomain: null });
         }
       }
     });
@@ -275,7 +251,6 @@ function AppComponent() {
     };
   }, [loadApps, runningApps, apps, handleOpenInBrowser]);
 
-  // Add new app
   const handleAddApp = async () => {
     const selected = await open({
       directory: true,
@@ -287,7 +262,6 @@ function AppComponent() {
 
     const path = selected as string;
 
-    // Check if already exists
     const existing = await db.select<App[]>(
       "SELECT * FROM apps WHERE path = $1",
       [path]
@@ -297,7 +271,6 @@ function AppComponent() {
       return;
     }
 
-    // Try to read package.json for name
     let name = path.split("/").pop() || "Unknown App";
     try {
       const pkg = await invoke<{ name?: string }>("read_package_json", { path });
@@ -305,7 +278,6 @@ function AppComponent() {
         name = pkg.name;
       }
     } catch {
-      // Use folder name if package.json doesn't exist
     }
 
     const id = await invoke<string>("generate_id");
@@ -319,15 +291,12 @@ function AppComponent() {
     loadApps();
   };
 
-  // Remove app
   const handleRemoveApp = async (id: string) => {
     if (!db) return;
 
-    // Stop if running and remove proxy route
     if (runningApps[id]) {
       await invoke("stop_app", { id });
       
-      // Remove proxy route
       if (proxyRoutes[id]) {
         try {
           await invoke("remove_proxy_route", { appId: id });
@@ -346,7 +315,6 @@ function AppComponent() {
     loadApps();
   };
 
-  // Start app
   const handleStartApp = async (app: App) => {
     const port = app.port || (await invoke<number>("get_free_port", { preferred: null }));
     
@@ -356,10 +324,9 @@ function AppComponent() {
         path: app.path,
         command: app.command,
         port,
+        subdomain: app.subdomain,
       });
       
-      // Add proxy route if subdomain is configured
-      // Always try to add the route - let it fail silently if proxy isn't ready
       if (app.subdomain) {
         try {
           await invoke("add_proxy_route", {
@@ -371,7 +338,6 @@ function AppComponent() {
             ...prev,
             [app.id]: { subdomain: app.subdomain!, port: actualPort }
           }));
-          console.log(`Added proxy route: ${app.subdomain} -> localhost:${actualPort}`);
         } catch (e) {
           console.error("Failed to add proxy route:", e);
         }
@@ -382,11 +348,9 @@ function AppComponent() {
     }
   };
 
-  // Stop app
   const handleStopApp = async (id: string) => {
     await invoke("stop_app", { id });
     
-    // Remove proxy route
     if (proxyRoutes[id]) {
       try {
         await invoke("remove_proxy_route", { appId: id });
@@ -401,7 +365,6 @@ function AppComponent() {
     }
   };
 
-  // Save app changes
   const handleSaveApp = async () => {
     if (!editingApp || !db) return;
 
@@ -417,11 +380,9 @@ function AppComponent() {
       ]
     );
 
-    // Update proxy route if app is running
     if (runningApps[editingApp.id]) {
       try {
         if (editingApp.subdomain) {
-          // Add/update route
           await invoke("add_proxy_route", {
             appId: editingApp.id,
             subdomain: editingApp.subdomain,
@@ -432,7 +393,6 @@ function AppComponent() {
             [editingApp.id]: { subdomain: editingApp.subdomain!, port: runningApps[editingApp.id] }
           }));
         } else if (proxyRoutes[editingApp.id]) {
-          // Remove route if subdomain was cleared
           await invoke("remove_proxy_route", { appId: editingApp.id });
           setProxyRoutes((prev) => {
             const next = { ...prev };
@@ -449,7 +409,6 @@ function AppComponent() {
     loadApps();
   };
 
-  // Toggle manager autostart
   const handleToggleAutostart = async () => {
     if (autoStartEnabled) {
       await disable();
@@ -459,20 +418,17 @@ function AppComponent() {
     setAutoStartEnabled(!autoStartEnabled);
   };
 
-  // Install proxy service (one-time setup)
   const handleInstallService = async () => {
     setSetupLoading(true);
     try {
       await invoke("install_proxy_service");
       
-      // Poll for service status up to 5 times
       for (let i = 0; i < 5; i++) {
         await new Promise(resolve => setTimeout(resolve, 1000));
         const status = await invoke<ProxyServiceStatus>("get_proxy_service_status");
         setServiceStatus(status);
-        setHostname(status.hostname);
         
-        if (status.installed && status.dnsmasq_running && status.caddy_running) {
+        if (status.installed && status.caddy_running) {
           setShowSetupWizard(false);
           break;
         }
@@ -485,7 +441,6 @@ function AppComponent() {
     }
   };
 
-  // Uninstall proxy service
   const handleUninstallService = async () => {
     if (!confirm("Are you sure you want to uninstall the proxy service? Your apps will only be accessible via localhost:port.")) {
       return;
@@ -500,19 +455,17 @@ function AppComponent() {
     }
   };
 
-  // Start proxy service (when installed but stopped)
   const handleStartProxyService = async () => {
     setSetupLoading(true);
     try {
       await invoke("start_proxy_service");
       
-      // Poll for service status up to 5 times
       for (let i = 0; i < 5; i++) {
         await new Promise(resolve => setTimeout(resolve, 1000));
         const status = await invoke<ProxyServiceStatus>("get_proxy_service_status");
         setServiceStatus(status);
         
-        if (status.dnsmasq_running && status.caddy_running) {
+        if (status.caddy_running) {
           break;
         }
       }
@@ -524,9 +477,6 @@ function AppComponent() {
     }
   };
 
-
-
-  // Copy URL to clipboard with feedback
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -560,6 +510,11 @@ function AppComponent() {
                 disabled={setupLoading}
               >
                 {setupLoading ? "Starting..." : "Start Proxy"}
+              </button>
+            )}
+            {isProxyOperational && lanIp && (
+              <button className="btn btn-small" onClick={() => setShowLanInfo(true)}>
+                LAN Access
               </button>
             )}
             {serviceStatus?.installed && (
@@ -610,8 +565,8 @@ function AppComponent() {
                           <div className="url-badges">
                             {serviceStatus?.installed && app.subdomain && (
                               <>
-                                <span className={`url-badge subdomain ${!isProxyOperational ? "inactive" : ""}`}>
-                                  {app.subdomain}.{hostname}.local
+                                <span className={`url-badge lan ${!isProxyOperational ? "inactive" : ""}`}>
+                                  {app.subdomain}.local
                                 </span>
                                 <span className="url-separator">|</span>
                               </>
@@ -711,14 +666,14 @@ function AppComponent() {
                   <div className="url-links">
                     {serviceStatus?.installed && selectedApp.subdomain && (
                       <div className={`url-link-item ${!isProxyOperational ? "inactive" : ""}`}>
-                        <code>http://{selectedApp.subdomain}.{hostname}.local</code>
+                        <code>http://{selectedApp.subdomain}.local</code>
                         <button 
                           className="btn-copy" 
-                          onClick={() => copyToClipboard(`http://${selectedApp.subdomain}.${hostname}.local`)}
+                          onClick={() => copyToClipboard(`http://${selectedApp.subdomain}.local`)}
                           disabled={!isProxyOperational}
                           title={!isProxyOperational ? "Proxy is stopped" : undefined}
                         >
-                          {copiedUrl === `http://${selectedApp.subdomain}.${hostname}.local` ? "Copied!" : "Copy"}
+                          {copiedUrl === `http://${selectedApp.subdomain}.local` ? "Copied!" : "Copy"}
                         </button>
                         {!isProxyOperational && <span className="url-status">(proxy stopped)</span>}
                       </div>
@@ -767,7 +722,6 @@ function AppComponent() {
         )}
       </main>
 
-      {/* Edit Modal */}
       {editingApp && (
         <div className="modal-overlay" onClick={() => setEditingApp(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -793,7 +747,7 @@ function AppComponent() {
                   }
                   placeholder="my-app"
                 />
-                <span className="subdomain-suffix">.{hostname}.local</span>
+                <span className="subdomain-suffix">.local</span>
               </div>
             </div>
             <div className="form-group">
@@ -847,13 +801,12 @@ function AppComponent() {
         </div>
       )}
 
-      {/* Proxy Setup Wizard */}
       {showSetupWizard && (
         <div className="modal-overlay" onClick={() => setShowSetupWizard(false)}>
           <div className="modal dns-setup-modal" onClick={(e) => e.stopPropagation()}>
             <h2>Proxy Service Setup</h2>
             <p>
-              To access your apps via clean URLs like <code>my-app.{hostname}.local</code>,
+              To access your apps via clean URLs like <code>my-app.local</code>,
               we need to install a background proxy service.
             </p>
             
@@ -862,9 +815,6 @@ function AppComponent() {
               <ul>
                 <li className={serviceStatus?.installed ? "ok" : "missing"}>
                   Service: {serviceStatus?.installed ? "Installed" : "Not installed"}
-                </li>
-                <li className={serviceStatus?.dnsmasq_running ? "ok" : "missing"}>
-                  DNS: {serviceStatus?.dnsmasq_running ? "Running" : "Not running"}
                 </li>
                 <li className={serviceStatus?.caddy_running ? "ok" : "missing"}>
                   Proxy: {serviceStatus?.caddy_running ? "Running" : "Not running"}
@@ -875,8 +825,8 @@ function AppComponent() {
             <div className="dns-setup-info">
               <h3>What will be installed:</h3>
               <ul>
-                <li>DNS resolver for *.{hostname}.local</li>
-                <li>Background proxy service (runs automatically at startup)</li>
+                <li>Background proxy service (Caddy)</li>
+                <li>mDNS advertising for LAN access</li>
               </ul>
               <p className="warning">
                 This is a one-time setup that requires your administrator password.
@@ -894,6 +844,52 @@ function AppComponent() {
                 disabled={setupLoading}
               >
                 {setupLoading ? "Installing..." : "Install Service"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLanInfo && (
+        <div className="modal-overlay" onClick={() => setShowLanInfo(false)}>
+          <div className="modal lan-info-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Access from Other Devices</h2>
+            <p>
+              Your apps are automatically discoverable on the local network via mDNS (Bonjour).
+            </p>
+            
+            <div className="lan-setup-steps">
+              <h3>How to Access</h3>
+              <p>From any device on the same Wi-Fi network, simply open:</p>
+              <div className="lan-url-example">
+                <code>http://your-app.local</code>
+              </div>
+              <p className="info-note">
+                For example, if your app's subdomain is "zrabi-dev", open <code>http://zrabi-dev.local</code> in Safari on your iPhone.
+              </p>
+              <p className="info-note">
+                This works automatically - no DNS configuration needed!
+              </p>
+            </div>
+
+            <div className="lan-info-details">
+              <div className="info-row">
+                <label>Your Mac's IP:</label>
+                <div className="ip-display">
+                  <code>{lanIp}</code>
+                  <button 
+                    className="btn-copy" 
+                    onClick={() => lanIp && copyToClipboard(lanIp)}
+                  >
+                    {copiedUrl === lanIp ? "Copied!" : "Copy"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn btn-primary" onClick={() => setShowLanInfo(false)}>
+                Got it
               </button>
             </div>
           </div>

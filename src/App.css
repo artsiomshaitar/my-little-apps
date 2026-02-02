@@ -236,7 +236,12 @@ body {
   color: var(--success);
 }
 
-.url-badge.subdomain.inactive {
+.url-badge.lan {
+  color: var(--success);
+}
+
+.url-badge.subdomain.inactive,
+.url-badge.lan.inactive {
   color: var(--text-secondary);
   opacity: 0.6;
 }
@@ -340,6 +345,16 @@ body {
 .url-link-item code {
   flex: 1;
   font-size: 0.8125rem;
+}
+
+.url-label {
+  font-size: 0.625rem;
+  padding: 2px 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .btn-copy {
@@ -670,4 +685,121 @@ body {
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* LAN Info Modal */
+.lan-info-modal {
+  max-width: 550px;
+}
+
+.lan-info-modal p {
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.lan-info-details {
+  background: var(--bg-primary);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.lan-info-details .info-row {
+  border-bottom: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lan-info-details .info-row label {
+  width: auto;
+}
+
+.ip-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ip-display code {
+  font-size: 1.125rem;
+  font-family: "SF Mono", Monaco, monospace;
+  color: var(--success);
+  background: var(--bg-tertiary);
+  padding: 8px 16px;
+  border-radius: 6px;
+}
+
+.lan-setup-steps {
+  background: var(--bg-primary);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.lan-setup-steps h3 {
+  font-size: 0.875rem;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.lan-setup-steps p {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  margin-bottom: 12px;
+}
+
+.lan-url-example {
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  margin: 16px 0;
+}
+
+.lan-url-example code {
+  font-size: 1.25rem;
+  font-family: "SF Mono", Monaco, monospace;
+  color: var(--success);
+}
+
+.lan-setup-steps ol {
+  margin-left: 20px;
+  color: var(--text-secondary);
+}
+
+.lan-setup-steps li {
+  padding: 6px 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.lan-setup-steps code {
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "SF Mono", Monaco, monospace;
+  font-size: 0.875rem;
+  color: var(--success);
+}
+
+.lan-setup-steps .info-note {
+  margin-top: 16px;
+  padding: 12px;
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid var(--success);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.lan-setup-steps .warning {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid var(--warning);
+  border-radius: 6px;
+  color: var(--warning);
+  font-size: 0.8125rem;
 }

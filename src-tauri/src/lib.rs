@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::TcpListener;
+use std::path::PathBuf;
 use std::sync::Arc;
 use sysinfo::{Pid, Signal, System};
 use tauri::{
@@ -17,9 +18,11 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 mod dns;
+mod mdns;
 mod proxy;
 
 use dns::ProxyServiceStatus;
+use mdns::MdnsRegistry;
 use proxy::{ProxyRoute, ProxyState};
 
 // App data structure matching our SQLite schema
@@ -40,6 +43,7 @@ pub struct App {
 pub struct RunningProcess {
     pub child: CommandChild,
     pub port: i32,
+    pub subdomain: Option<String>,
 }
 
 // App state to track running processes
@@ -110,6 +114,159 @@ fn kill_process_tree(pid: u32) {
     }
 }
 
+fn get_pids_file_path() -> PathBuf {
+    std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(".my-little-apps-pids.json")
+}
+
+fn read_pids() -> HashMap<String, u32> {
+    let path = get_pids_file_path();
+    if !path.exists() {
+        return HashMap::new();
+    }
+    std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|content| serde_json::from_str(&content).ok())
+        .unwrap_or_default()
+}
+
+fn write_pids(pids: &HashMap<String, u32>) {
+    let path = get_pids_file_path();
+    if let Ok(content) = serde_json::to_string(pids) {
+        let _ = std::fs::write(&path, content);
+    }
+}
+
+fn save_pid(app_id: &str, pid: u32) {
+    let mut pids = read_pids();
+    pids.insert(app_id.to_string(), pid);
+    write_pids(&pids);
+}
+
+fn remove_pid(app_id: &str) {
+    let mut pids = read_pids();
+    pids.remove(app_id);
+    write_pids(&pids);
+}
+
+fn cleanup_orphaned_processes() {
+    let pids = read_pids();
+    if pids.is_empty() {
+        return;
+    }
+
+    let mut system = System::new_all();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
+    for (app_id, pid) in &pids {
+        let sysinfo_pid = Pid::from_u32(*pid);
+        if system.process(sysinfo_pid).is_some() {
+            eprintln!("Cleaning up orphaned process {} (app: {})", pid, app_id);
+            kill_process_tree(*pid);
+            if let Some(process) = system.process(sysinfo_pid) {
+                process.kill_with(Signal::Term);
+            }
+        }
+    }
+
+    write_pids(&HashMap::new());
+}
+
+async fn cleanup_and_sync(app_handle: &AppHandle) {
+    let app_state = app_handle.state::<AppState>();
+    let proxy_state = app_handle.state::<ProxyState>();
+    let mdns_registry = app_handle.state::<MdnsRegistry>();
+
+    let mut system = System::new_all();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
+    let mut dead_apps: Vec<String> = Vec::new();
+    let mut live_apps: HashMap<String, (i32, Option<String>)> = HashMap::new();
+
+    {
+        let processes = app_state.processes.lock().await;
+        for (app_id, process) in processes.iter() {
+            let pid = Pid::from_u32(process.child.pid());
+            if system.process(pid).is_some() {
+                live_apps.insert(app_id.clone(), (process.port, process.subdomain.clone()));
+            } else {
+                dead_apps.push(app_id.clone());
+            }
+        }
+    }
+
+    if !dead_apps.is_empty() {
+        let mut processes = app_state.processes.lock().await;
+        for app_id in &dead_apps {
+            processes.remove(app_id);
+            remove_pid(app_id);
+            let _ = app_handle.emit(
+                "app-stopped",
+                serde_json::json!({
+                    "id": app_id,
+                    "code": null
+                }),
+            );
+        }
+    }
+
+    let mut expected_routes: HashMap<String, proxy::ProxyRoute> = HashMap::new();
+    for (app_id, (port, subdomain)) in &live_apps {
+        if let Some(sub) = subdomain {
+            expected_routes.insert(
+                app_id.clone(),
+                proxy::ProxyRoute {
+                    subdomain: sub.clone(),
+                    port: *port,
+                },
+            );
+        }
+    }
+
+    let current_routes = {
+        let routes = proxy_state.routes.lock().await;
+        routes.clone()
+    };
+
+    if expected_routes != current_routes {
+        {
+            let mut routes = proxy_state.routes.lock().await;
+            *routes = expected_routes.clone();
+        }
+        
+        if let Err(e) = proxy::update_routes(&expected_routes).await {
+            eprintln!("Failed to sync routes with Caddy: {}", e);
+        }
+    }
+
+    if let Some(lan_ip) = dns::get_lan_ip() {
+        let expected_subdomains: std::collections::HashSet<String> = expected_routes
+            .values()
+            .map(|r| r.subdomain.clone())
+            .collect();
+
+        let current_subdomains = mdns_registry.get_registered_subdomains();
+
+        for subdomain in &expected_subdomains {
+            if !current_subdomains.contains(subdomain) {
+                if let Err(e) = mdns_registry.register(subdomain, &lan_ip) {
+                    eprintln!("Failed to register mDNS for {}: {}", subdomain, e);
+                }
+            }
+        }
+
+        for subdomain in &current_subdomains {
+            if !expected_subdomains.contains(subdomain) {
+                if let Err(e) = mdns_registry.unregister(subdomain) {
+                    eprintln!("Failed to unregister mDNS for {}: {}", subdomain, e);
+                }
+            }
+        }
+    }
+}
+
 #[tauri::command]
 fn generate_id() -> String {
     Uuid::new_v4().to_string()
@@ -136,19 +293,17 @@ async fn start_app(
     path: String,
     command: String,
     port: i32,
+    subdomain: Option<String>,
 ) -> Result<i32, String> {
     let mut processes = state.processes.lock().await;
 
-    // Check if already running
     if processes.contains_key(&id) {
         return Err("App is already running".to_string());
     }
 
-    // Find a free port
     let actual_port =
         find_free_port(Some(port)).ok_or_else(|| "Could not find a free port".to_string())?;
 
-    // Parse command
     let parts: Vec<&str> = command.split_whitespace().collect();
     if parts.is_empty() {
         return Err("Invalid command".to_string());
@@ -157,7 +312,6 @@ async fn start_app(
     let program = parts[0];
     let args: Vec<&str> = parts[1..].to_vec();
 
-    // Create shell command with PORT env variable
     let shell = app_handle.shell();
     let cmd = shell
         .command(program)
@@ -167,12 +321,15 @@ async fn start_app(
 
     let (mut rx, child) = cmd.spawn().map_err(|e| format!("Failed to start app: {}", e))?;
 
-    // Store the process
+    let child_pid = child.pid();
+    save_pid(&id, child_pid);
+
     processes.insert(
         id.clone(),
         RunningProcess {
             child,
             port: actual_port,
+            subdomain,
         },
     );
 
@@ -273,6 +430,8 @@ async fn stop_app(
             .kill()
             .map_err(|e| format!("Failed to stop app: {}", e))?;
 
+        remove_pid(&id);
+
         let _ = app_handle.emit(
             "app-stopped",
             serde_json::json!({
@@ -304,9 +463,9 @@ async fn get_app_logs(state: State<'_, AppState>, id: String) -> Result<Vec<Stri
 }
 
 #[tauri::command]
-async fn open_in_browser(port: i32, subdomain: Option<String>, hostname: Option<String>) -> Result<(), String> {
-    let url = if let (Some(sub), Some(host)) = (subdomain, hostname) {
-        format!("http://{}.{}.local", sub, host)
+async fn open_in_browser(port: i32, subdomain: Option<String>) -> Result<(), String> {
+    let url = if let Some(sub) = subdomain {
+        format!("http://{}.local", sub)
     } else {
         format!("http://localhost:{}", port)
     };
@@ -316,8 +475,8 @@ async fn open_in_browser(port: i32, subdomain: Option<String>, hostname: Option<
 // ============ Proxy Commands ============
 
 #[tauri::command]
-fn get_hostname() -> String {
-    dns::get_local_hostname()
+fn get_lan_ip() -> Option<String> {
+    dns::get_lan_ip()
 }
 
 #[tauri::command]
@@ -328,18 +487,39 @@ fn slugify_name(name: String) -> String {
 #[tauri::command]
 async fn add_proxy_route(
     proxy_state: State<'_, ProxyState>,
+    mdns_registry: State<'_, MdnsRegistry>,
     app_id: String,
     subdomain: String,
     port: i32,
 ) -> Result<(), String> {
-    proxy::add_route(&proxy_state, &app_id, &subdomain, port).await
+    proxy::add_route(&proxy_state, &app_id, &subdomain, port).await?;
+    
+    if let Some(lan_ip) = dns::get_lan_ip() {
+        if let Err(e) = mdns_registry.register(&subdomain, &lan_ip) {
+            eprintln!("Failed to register mDNS for {}: {}", subdomain, e);
+        }
+    }
+    
+    Ok(())
 }
 
 #[tauri::command]
 async fn remove_proxy_route(
     proxy_state: State<'_, ProxyState>,
+    mdns_registry: State<'_, MdnsRegistry>,
     app_id: String,
 ) -> Result<(), String> {
+    let subdomain = {
+        let routes = proxy_state.routes.lock().await;
+        routes.get(&app_id).map(|r| r.subdomain.clone())
+    };
+    
+    if let Some(subdomain) = subdomain {
+        if let Err(e) = mdns_registry.unregister(&subdomain) {
+            eprintln!("Failed to unregister mDNS for {}: {}", subdomain, e);
+        }
+    }
+    
     proxy::remove_route(&proxy_state, &app_id).await
 }
 
@@ -352,8 +532,8 @@ async fn get_proxy_routes(
 }
 
 #[tauri::command]
-fn get_app_url(subdomain: String, hostname: String) -> String {
-    proxy::get_app_url(&subdomain, &hostname)
+fn get_app_url(subdomain: String) -> String {
+    proxy::get_app_url(&subdomain)
 }
 
 #[tauri::command]
@@ -475,7 +655,7 @@ pub fn run() {
         },
     ];
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:my-little-apps.db", migrations)
@@ -490,8 +670,18 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
         .manage(ProxyState::default())
+        .manage(MdnsRegistry::new())
         .setup(|app| {
-            // Load tray icon from PNG file
+            cleanup_orphaned_processes();
+
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                    cleanup_and_sync(&app_handle).await;
+                }
+            });
+
             let icon_bytes = include_bytes!("../icons/icon.png");
             let img = image::load_from_memory(icon_bytes).expect("Failed to load icon");
             let rgba = img.to_rgba8();
@@ -530,33 +720,7 @@ pub fn run() {
                             }
                         }
                         "quit" => {
-                            // Stop all running apps and clear proxy routes before exiting
-                            let app_state = app.state::<AppState>();
-                            let proxy_state = app.state::<ProxyState>();
-                            
-                            // Clone what we need before the async block
-                            let processes = app_state.processes.clone();
-                            let routes = proxy_state.routes.clone();
-                            let hostname = proxy_state.hostname.clone();
-                            
-                            // Spawn cleanup task
-                            let app_handle = app.clone();
-                            tauri::async_runtime::spawn(async move {
-                                // Stop all running processes
-                                let mut procs = processes.lock().await;
-                                for (_, process) in procs.drain() {
-                                    kill_process_tree(process.child.pid());
-                                    let _ = process.child.kill();
-                                }
-                                
-                                // Clear proxy routes (reset Caddy to default config)
-                                let mut routes_guard = routes.lock().await;
-                                routes_guard.clear();
-                                let _ = proxy::update_routes(&routes_guard, &hostname).await;
-                                
-                                // Exit the app
-                                app_handle.exit(0);
-                            });
+                            app.exit(0);
                         }
                         _ => {
                             // App item clicked - emit event to open in browser
@@ -601,7 +765,7 @@ pub fn run() {
             open_in_browser,
             refresh_tray,
             // Proxy commands
-            get_hostname,
+            get_lan_ip,
             slugify_name,
             add_proxy_route,
             remove_proxy_route,
@@ -615,6 +779,37 @@ pub fn run() {
             start_proxy_service,
             stop_proxy_service,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            let app_state = app_handle.state::<AppState>();
+            let proxy_state = app_handle.state::<ProxyState>();
+            let mdns_registry = app_handle.state::<MdnsRegistry>();
+            let processes = app_state.processes.clone();
+            let routes = proxy_state.routes.clone();
+
+            if let Ok(mut procs) = processes.try_lock() {
+                for (_, process) in procs.drain() {
+                    kill_process_tree(process.child.pid());
+                    let _ = process.child.kill();
+                }
+            }
+
+            let _ = mdns_registry.unregister_all();
+
+            let should_update = if let Ok(mut routes_guard) = routes.try_lock() {
+                routes_guard.clear();
+                true
+            } else {
+                false
+            };
+
+            if should_update {
+                let empty_routes = std::collections::HashMap::new();
+                let _ = tauri::async_runtime::block_on(proxy::update_routes(&empty_routes));
+            }
+        }
+    });
 }
