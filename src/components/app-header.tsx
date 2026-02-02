@@ -18,6 +18,7 @@ interface AppHeaderProps {
   onLanInfoClick: () => void;
   onAddApp: () => void;
   showLanButton: boolean;
+  isDbReady?: boolean;
 }
 
 export const AppHeader = memo(function AppHeader({
@@ -32,6 +33,7 @@ export const AppHeader = memo(function AppHeader({
   onLanInfoClick,
   onAddApp,
   showLanButton,
+  isDbReady = true,
 }: AppHeaderProps) {
   const proxyStatusText = isProxyOperational
     ? "running"
@@ -119,8 +121,9 @@ export const AppHeader = memo(function AppHeader({
           size="sm"
           className="h-7 text-xs"
           onClick={onAddApp}
+          disabled={!isDbReady}
         >
-          + add app
+          {isDbReady ? "+ add app" : "Loading..."}
         </Button>
       </div>
     </header>

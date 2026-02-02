@@ -46,6 +46,7 @@ function AppComponent() {
     stopApp,
     updateApp,
     handleOpenInBrowser,
+    isDbReady,
   } = useApps({
     addProxyRoute,
     removeProxyRoute,
@@ -131,6 +132,7 @@ function AppComponent() {
           onLanInfoClick={() => setShowLanInfo(true)}
           onAddApp={addApp}
           showLanButton={!!isProxyOperational && !!lanIp}
+          isDbReady={isDbReady}
         />
 
         <main className="flex flex-1 overflow-hidden">

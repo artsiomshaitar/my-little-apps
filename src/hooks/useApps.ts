@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { info, error } from "@tauri-apps/plugin-log";
 import Database from "@tauri-apps/plugin-sql";
 import type { App, RunningApps, AppLogs, ProxyRoute } from "@/types";
 
@@ -38,8 +39,15 @@ export function useApps({
 
   useEffect(() => {
     const initDb = async () => {
-      const database = await Database.load("sqlite:my-little-apps.db");
-      setDb(database);
+      try {
+        const database = await Database.load("sqlite:my-little-apps.db");
+        setDb(database);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        try {
+          await error(`Database load failed: ${message}`);
+        } catch {}
+      }
     };
     initDb();
   }, []);
@@ -205,13 +213,27 @@ export function useApps({
   }, [loadApps, handleOpenInBrowser, setProxyRoutes]);
 
   const addApp = useCallback(async () => {
+    try {
+      await info("Add app: opening folder dialog");
+    } catch {}
     const selected = await open({
       directory: true,
       multiple: false,
       title: "Select your app folder",
     });
 
-    if (!selected || !db) return;
+    if (!selected) {
+      try {
+        await error("Add app: dialog cancelled or returned no path");
+      } catch {}
+      return;
+    }
+    if (!db) {
+      try {
+        await error("Add app: database not ready");
+      } catch {}
+      return;
+    }
 
     const path = selected as string;
 
@@ -234,15 +256,26 @@ export function useApps({
       }
     } catch {}
 
-    const id = await invoke<string>("generate_id");
-    const subdomain = await invoke<string>("slugify_name", { name });
+    try {
+      const id = await invoke<string>("generate_id");
+      const subdomain = await invoke<string>("slugify_name", { name });
 
-    await db.execute(
-      "INSERT INTO apps (id, name, path, command, run_on_startup, subdomain) VALUES ($1, $2, $3, $4, $5, $6)",
-      [id, name, path, "bun start", false, subdomain]
-    );
+      await db.execute(
+        "INSERT INTO apps (id, name, path, command, run_on_startup, subdomain) VALUES ($1, $2, $3, $4, $5, $6)",
+        [id, name, path, "bun start", false, subdomain]
+      );
 
-    loadApps();
+      try {
+        await info(`Add app: added project ${name} at ${path}`);
+      } catch {}
+      loadApps();
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      try {
+        await error(`Add app failed: ${reason}`);
+      } catch {}
+      throw e;
+    }
   }, [db, loadApps]);
 
   const removeApp = useCallback(
@@ -374,5 +407,6 @@ export function useApps({
     updateApp,
     handleOpenInBrowser,
     loadApps,
+    isDbReady: db !== null,
   };
 }

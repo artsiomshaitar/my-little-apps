@@ -15,7 +15,7 @@ impl MdnsRegistry {
 
     pub fn register(&self, subdomain: &str, lan_ip: &str) -> Result<(), String> {
         let hostname = format!("{}.local", subdomain);
-        
+
         let child = Command::new("dns-sd")
             .args([
                 "-P",
@@ -32,32 +32,32 @@ impl MdnsRegistry {
             .map_err(|e| format!("Failed to register mDNS for {}: {}", subdomain, e))?;
 
         let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
-        
+
         if let Some(mut old_child) = processes.remove(subdomain) {
             let _ = old_child.kill();
         }
-        
+
         processes.insert(subdomain.to_string(), child);
         Ok(())
     }
 
     pub fn unregister(&self, subdomain: &str) -> Result<(), String> {
         let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
-        
+
         if let Some(mut child) = processes.remove(subdomain) {
             let _ = child.kill();
         }
-        
+
         Ok(())
     }
 
     pub fn unregister_all(&self) -> Result<(), String> {
         let mut processes = self.processes.lock().map_err(|e| e.to_string())?;
-        
+
         for (_, mut child) in processes.drain() {
             let _ = child.kill();
         }
-        
+
         Ok(())
     }
 

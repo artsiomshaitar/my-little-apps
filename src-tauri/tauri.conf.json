@@ -30,6 +30,11 @@
       "iconAsTemplate": true
     }
   },
+  "plugins": {
+    "sql": {
+      "preload": ["sqlite:my-little-apps.db"]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

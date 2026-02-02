@@ -35,7 +35,9 @@ fn generate_caddyfile(routes: &HashMap<String, ProxyRoute>) -> String {
 
     if routes.is_empty() {
         content.push_str(":80 {\n");
-        content.push_str("\trespond \"My Little Apps proxy is running. No apps configured yet.\" 200\n");
+        content.push_str(
+            "\trespond \"My Little Apps proxy is running. No apps configured yet.\" 200\n",
+        );
         content.push_str("}\n");
     } else {
         for route in routes.values() {
@@ -60,7 +62,12 @@ pub async fn load_caddyfile_via_api(content: &str) -> Result<(), String> {
         .body(content.to_string())
         .send()
         .await
-        .map_err(|e| format!("Failed to connect to Caddy admin API (is the proxy service running?): {}", e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to connect to Caddy admin API (is the proxy service running?): {}",
+                e
+            )
+        })?;
 
     if response.status().is_success() {
         Ok(())

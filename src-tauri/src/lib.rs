@@ -114,11 +114,37 @@ fn kill_process_tree(pid: u32) {
     }
 }
 
-fn get_pids_file_path() -> PathBuf {
-    std::env::var("HOME")
+fn app_data_dir() -> PathBuf {
+    let base = std::env::var("HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join(".my-little-apps-pids.json")
+        .unwrap_or_else(|_| PathBuf::from("."));
+    let dir_name = if cfg!(debug_assertions) {
+        ".my-little-apps-debug"
+    } else {
+        ".my-little-apps"
+    };
+    base.join(dir_name)
+}
+
+fn ensure_app_data_dir() -> Result<PathBuf, String> {
+    let dir = app_data_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create app data dir: {}", e))?;
+    let new_pids_path = dir.join("my-little-apps-pids.json");
+    if !new_pids_path.exists() {
+        let old_pids_path = std::env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(".my-little-apps-pids.json");
+        if old_pids_path.exists() {
+            let _ = std::fs::copy(&old_pids_path, &new_pids_path);
+            let _ = std::fs::remove_file(&old_pids_path);
+        }
+    }
+    Ok(dir)
+}
+
+fn get_pids_file_path() -> PathBuf {
+    app_data_dir().join("my-little-apps-pids.json")
 }
 
 fn read_pids() -> HashMap<String, u32> {
@@ -163,7 +189,7 @@ fn cleanup_orphaned_processes() {
     for (app_id, pid) in &pids {
         let sysinfo_pid = Pid::from_u32(*pid);
         if system.process(sysinfo_pid).is_some() {
-            eprintln!("Cleaning up orphaned process {} (app: {})", pid, app_id);
+            log::info!("Cleaned orphan process {} (app: {})", pid, app_id);
             kill_process_tree(*pid);
             if let Some(process) = system.process(sysinfo_pid) {
                 process.kill_with(Signal::Term);
@@ -172,6 +198,9 @@ fn cleanup_orphaned_processes() {
     }
 
     write_pids(&HashMap::new());
+    if !pids.is_empty() {
+        log::info!("Orphaned processes cleanup completed");
+    }
 }
 
 async fn cleanup_and_sync(app_handle: &AppHandle) {
@@ -237,7 +266,7 @@ async fn cleanup_and_sync(app_handle: &AppHandle) {
         }
         
         if let Err(e) = proxy::update_routes(&expected_routes).await {
-            eprintln!("Failed to sync routes with Caddy: {}", e);
+            log::error!("Failed to sync routes with Caddy: {}", e);
         }
     }
 
@@ -252,7 +281,7 @@ async fn cleanup_and_sync(app_handle: &AppHandle) {
         for subdomain in &expected_subdomains {
             if !current_subdomains.contains(subdomain) {
                 if let Err(e) = mdns_registry.register(subdomain, &lan_ip) {
-                    eprintln!("Failed to register mDNS for {}: {}", subdomain, e);
+                    log::error!("Failed to register mDNS for {}: {}", subdomain, e);
                 }
             }
         }
@@ -260,7 +289,7 @@ async fn cleanup_and_sync(app_handle: &AppHandle) {
         for subdomain in &current_subdomains {
             if !expected_subdomains.contains(subdomain) {
                 if let Err(e) = mdns_registry.unregister(subdomain) {
-                    eprintln!("Failed to unregister mDNS for {}: {}", subdomain, e);
+                    log::error!("Failed to unregister mDNS for {}: {}", subdomain, e);
                 }
             }
         }
@@ -285,6 +314,15 @@ async fn read_package_json(path: String) -> Result<serde_json::Value, String> {
     serde_json::from_str(&content).map_err(|e| format!("Failed to parse package.json: {}", e))
 }
 
+fn shell_exists(name: &str) -> bool {
+    std::process::Command::new(name)
+        .arg("-c")
+        .arg("")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 #[tauri::command]
 async fn start_app(
     app_handle: AppHandle,
@@ -298,28 +336,71 @@ async fn start_app(
     let mut processes = state.processes.lock().await;
 
     if processes.contains_key(&id) {
-        return Err("App is already running".to_string());
+        let msg = "App is already running".to_string();
+        log::error!("{}", msg);
+        return Err(msg);
     }
 
     let actual_port =
-        find_free_port(Some(port)).ok_or_else(|| "Could not find a free port".to_string())?;
+        find_free_port(Some(port)).ok_or_else(|| {
+            let msg = "Could not find a free port".to_string();
+            log::error!("{}", msg);
+            msg
+        })?;
 
-    let parts: Vec<&str> = command.split_whitespace().collect();
-    if parts.is_empty() {
-        return Err("Invalid command".to_string());
+    if command.trim().is_empty() {
+        let msg = "Invalid command".to_string();
+        log::error!("{}", msg);
+        return Err(msg);
     }
 
-    let program = parts[0];
-    let args: Vec<&str> = parts[1..].to_vec();
+    let default_shell = if cfg!(target_os = "macos") {
+        "zsh"
+    } else {
+        "bash"
+    };
+    let preferred = std::env::var("SHELL")
+        .ok()
+        .and_then(|s| {
+            std::path::Path::new(&s)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(String::from)
+        })
+        .filter(|s| s == "zsh" || s == "bash")
+        .unwrap_or_else(|| default_shell.into());
+
+    let shell_basename = if shell_exists(&preferred) {
+        preferred
+    } else if preferred == "zsh" && shell_exists("bash") {
+        "bash".into()
+    } else if preferred == "bash" && shell_exists("zsh") {
+        "zsh".into()
+    } else {
+        "sh".into()
+    };
+
+    let c_string = if shell_basename == "zsh" {
+        r#"source ~/.zprofile 2>/dev/null; source ~/.zshrc 2>/dev/null; eval "$MY_APP_CMD""#
+    } else if shell_basename == "bash" {
+        r#"source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; eval "$MY_APP_CMD""#
+    } else {
+        r#"eval "$MY_APP_CMD""#
+    };
 
     let shell = app_handle.shell();
     let cmd = shell
-        .command(program)
-        .args(args)
+        .command(&shell_basename)
+        .args(["-c", c_string])
         .current_dir(&path)
-        .env("PORT", actual_port.to_string());
+        .env("PORT", actual_port.to_string())
+        .env("MY_APP_CMD", command.trim());
 
-    let (mut rx, child) = cmd.spawn().map_err(|e| format!("Failed to start app: {}", e))?;
+    let (mut rx, child) = cmd.spawn().map_err(|e| {
+        let msg = format!("Failed to start app: {}", e);
+        log::error!("{}", msg);
+        msg
+    })?;
 
     let child_pid = child.pid();
     save_pid(&id, child_pid);
@@ -402,7 +483,8 @@ async fn start_app(
         }
     });
 
-    // Emit started event
+    log::info!(target: "success", "App started: id={} port={}", id, actual_port);
+
     let _ = app_handle.emit(
         "app-started",
         serde_json::json!({
@@ -425,12 +507,14 @@ async fn stop_app(
     if let Some(process) = processes.remove(&id) {
         kill_process_tree(process.child.pid());
 
-        process
-            .child
-            .kill()
-            .map_err(|e| format!("Failed to stop app: {}", e))?;
+        if let Err(e) = process.child.kill() {
+            let msg = format!("Failed to stop app: {}", e);
+            log::error!("{}", msg);
+            return Err(msg);
+        }
 
         remove_pid(&id);
+        log::info!(target: "success", "App stopped: id={}", id);
 
         let _ = app_handle.emit(
             "app-stopped",
@@ -563,22 +647,58 @@ fn get_proxy_service_status() -> ProxyServiceStatus {
 
 #[tauri::command]
 async fn install_proxy_service(app_handle: AppHandle) -> Result<(), String> {
-    dns::install_service(&app_handle).await
+    match dns::install_service(&app_handle).await {
+        Ok(()) => {
+            log::info!(target: "success", "Proxy service installed");
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("Proxy service install failed: {}", e);
+            Err(e)
+        }
+    }
 }
 
 #[tauri::command]
 async fn uninstall_proxy_service(app_handle: AppHandle) -> Result<(), String> {
-    dns::uninstall_service(&app_handle).await
+    match dns::uninstall_service(&app_handle).await {
+        Ok(()) => {
+            log::info!(target: "success", "Proxy service uninstalled");
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("Proxy service uninstall failed: {}", e);
+            Err(e)
+        }
+    }
 }
 
 #[tauri::command]
 async fn start_proxy_service() -> Result<(), String> {
-    dns::start_service().await
+    match dns::start_service().await {
+        Ok(()) => {
+            log::info!(target: "success", "Proxy service started");
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("Proxy service start failed: {}", e);
+            Err(e)
+        }
+    }
 }
 
 #[tauri::command]
 async fn stop_proxy_service() -> Result<(), String> {
-    dns::stop_service().await
+    match dns::stop_service().await {
+        Ok(()) => {
+            log::info!(target: "success", "Proxy service stopped");
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("Proxy service stop failed: {}", e);
+            Err(e)
+        }
+    }
 }
 
 fn update_tray_menu(app: &AppHandle, apps: Vec<App>, running: &HashMap<String, i32>) {
@@ -640,7 +760,32 @@ async fn refresh_tray(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Define database migrations
+    let _ = ensure_app_data_dir();
+    let log_dir = app_data_dir();
+    let log_plugin = tauri_plugin_log::Builder::new()
+        .clear_targets()
+        .target(tauri_plugin_log::Target::new(
+            tauri_plugin_log::TargetKind::Folder {
+                path: log_dir,
+                file_name: Some("app.log".into()),
+            },
+        ))
+        .format(|out, message, record| {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let prefix = if record.target() == "success" {
+                "[success]"
+            } else if record.level() == log::Level::Error {
+                "[error]"
+            } else {
+                "[info]"
+            };
+            out.finish(format_args!("{} {} {}", ts, prefix, message))
+        })
+        .build();
+
     let migrations = vec![
         Migration {
             version: 1,
@@ -669,6 +814,7 @@ pub fn run() {
     ];
 
     let app = tauri::Builder::default()
+        .plugin(log_plugin)
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:my-little-apps.db", migrations)
@@ -684,7 +830,23 @@ pub fn run() {
         .manage(AppState::default())
         .manage(ProxyState::default())
         .manage(MdnsRegistry::new())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+            }
+        })
         .setup(|app| {
+            match ensure_app_data_dir() {
+                Ok(_) => {
+                    log::info!("App data directory initialized");
+                }
+                Err(e) => {
+                    eprintln!("{}", e);
+                }
+            }
             cleanup_orphaned_processes();
 
             let app_handle = app.handle().clone();
@@ -797,6 +959,7 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
+            log::info!("Application shutting down");
             let app_state = app_handle.state::<AppState>();
             let proxy_state = app_handle.state::<ProxyState>();
             let mdns_registry = app_handle.state::<MdnsRegistry>();

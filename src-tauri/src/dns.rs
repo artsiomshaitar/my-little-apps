@@ -8,10 +8,7 @@ pub struct ProxyServiceStatus {
 }
 
 pub fn get_lan_ip() -> Option<String> {
-    if let Ok(output) = Command::new("ipconfig")
-        .args(["getifaddr", "en0"])
-        .output()
-    {
+    if let Ok(output) = Command::new("ipconfig").args(["getifaddr", "en0"]).output() {
         if output.status.success() {
             if let Ok(ip) = String::from_utf8(output.stdout) {
                 let ip = ip.trim();
@@ -22,10 +19,7 @@ pub fn get_lan_ip() -> Option<String> {
         }
     }
 
-    if let Ok(output) = Command::new("ipconfig")
-        .args(["getifaddr", "en1"])
-        .output()
-    {
+    if let Ok(output) = Command::new("ipconfig").args(["getifaddr", "en1"]).output() {
         if output.status.success() {
             if let Ok(ip) = String::from_utf8(output.stdout) {
                 let ip = ip.trim();
@@ -61,7 +55,7 @@ pub fn get_service_status() -> ProxyServiceStatus {
 
 pub fn get_resource_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     use tauri::Manager;
-    
+
     let resource_path = app_handle
         .path()
         .resource_dir()
@@ -155,7 +149,10 @@ pub async fn uninstall_service(app_handle: &tauri::AppHandle) -> Result<(), Stri
     let uninstall_script = resource_path.join("uninstall-proxy.sh");
 
     if !uninstall_script.exists() {
-        return Err(format!("Uninstall script not found at {:?}", uninstall_script));
+        return Err(format!(
+            "Uninstall script not found at {:?}",
+            uninstall_script
+        ));
     }
 
     let uninstall_script_str = uninstall_script.to_str().ok_or("Invalid script path")?;
