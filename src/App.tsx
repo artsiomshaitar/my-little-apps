@@ -4,7 +4,24 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import Database from "@tauri-apps/plugin-sql";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
-import "./App.css";
+
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 interface App {
   id: string;
@@ -45,10 +62,13 @@ function AppComponent() {
   const [autoStartEnabled, setAutoStartEnabled] = useState(false);
   const [db, setDb] = useState<Database | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
-  
+
   const [lanIp, setLanIp] = useState<string | null>(null);
-  const [serviceStatus, setServiceStatus] = useState<ProxyServiceStatus | null>(null);
-  const [proxyRoutes, setProxyRoutes] = useState<{ [id: string]: ProxyRoute }>({});
+  const [serviceStatus, setServiceStatus] =
+    useState<ProxyServiceStatus | null>(null);
+  const [proxyRoutes, setProxyRoutes] = useState<{ [id: string]: ProxyRoute }>(
+    {}
+  );
   const [showSetupWizard, setShowSetupWizard] = useState(false);
   const [showLanInfo, setShowLanInfo] = useState(false);
   const [setupLoading, setSetupLoading] = useState(false);
@@ -65,15 +85,18 @@ function AppComponent() {
   useEffect(() => {
     const initProxy = async () => {
       try {
-        const status = await invoke<ProxyServiceStatus>("get_proxy_service_status");
+        const status =
+          await invoke<ProxyServiceStatus>("get_proxy_service_status");
         setServiceStatus(status);
-        
-        const routes = await invoke<{ [id: string]: ProxyRoute }>("get_proxy_routes");
+
+        const routes = await invoke<{ [id: string]: ProxyRoute }>(
+          "get_proxy_routes"
+        );
         setProxyRoutes(routes);
-        
+
         const ip = await invoke<string | null>("get_lan_ip");
         setLanIp(ip);
-        
+
         if (!status.installed) {
           setShowSetupWizard(true);
         }
@@ -92,36 +115,41 @@ function AppComponent() {
     return result;
   }, [db]);
 
-  const autoStartApps = useCallback(async (appsToStart: App[], currentRunning: RunningApps) => {
-    for (const app of appsToStart) {
-      if (app.run_on_startup && !currentRunning[app.id]) {
-        try {
-          const port = app.port || (await invoke<number>("get_free_port", { preferred: null }));
-          const actualPort = await invoke<number>("start_app", {
-            id: app.id,
-            path: app.path,
-            command: app.command,
-            port,
-            subdomain: app.subdomain,
-          });
-          
-          if (app.subdomain) {
-            try {
-              await invoke("add_proxy_route", {
-                appId: app.id,
-                subdomain: app.subdomain,
-                port: actualPort,
-              });
-            } catch (e) {
-              console.error(`Failed to add proxy route for ${app.name}:`, e);
+  const autoStartApps = useCallback(
+    async (appsToStart: App[], currentRunning: RunningApps) => {
+      for (const app of appsToStart) {
+        if (app.run_on_startup && !currentRunning[app.id]) {
+          try {
+            const port =
+              app.port ||
+              (await invoke<number>("get_free_port", { preferred: null }));
+            const actualPort = await invoke<number>("start_app", {
+              id: app.id,
+              path: app.path,
+              command: app.command,
+              port,
+              subdomain: app.subdomain,
+            });
+
+            if (app.subdomain) {
+              try {
+                await invoke("add_proxy_route", {
+                  appId: app.id,
+                  subdomain: app.subdomain,
+                  port: actualPort,
+                });
+              } catch (e) {
+                console.error(`Failed to add proxy route for ${app.name}:`, e);
+              }
             }
+          } catch (e) {
+            console.error(`Failed to auto-start ${app.name}:`, e);
           }
-        } catch (e) {
-          console.error(`Failed to auto-start ${app.name}:`, e);
         }
       }
-    }
-  }, []);
+    },
+    []
+  );
 
   useEffect(() => {
     if (db) {
@@ -129,7 +157,7 @@ function AppComponent() {
         const loadedApps = await loadApps();
         const running = await invoke<RunningApps>("get_running_apps");
         setRunningApps(running);
-        
+
         const newProxyRoutes: { [id: string]: ProxyRoute } = {};
         if (loadedApps) {
           for (const app of loadedApps) {
@@ -142,15 +170,20 @@ function AppComponent() {
                   port,
                 });
                 newProxyRoutes[app.id] = { subdomain: app.subdomain, port };
-                console.log(`Re-registered proxy route: ${app.subdomain} -> localhost:${port}`);
+                console.log(
+                  `Re-registered proxy route: ${app.subdomain} -> localhost:${port}`
+                );
               } catch (e) {
-                console.error(`Failed to re-register proxy route for ${app.name}:`, e);
+                console.error(
+                  `Failed to re-register proxy route for ${app.name}:`,
+                  e
+                );
               }
             }
           }
         }
         setProxyRoutes(newProxyRoutes);
-        
+
         if (loadedApps) {
           await autoStartApps(loadedApps, running);
         }
@@ -169,12 +202,16 @@ function AppComponent() {
     }
   }, [logs, selectedAppId]);
 
-  const isProxyOperational = serviceStatus?.installed && serviceStatus?.caddy_running;
+  const isProxyOperational =
+    serviceStatus?.installed && serviceStatus?.caddy_running;
 
-  const handleOpenInBrowser = useCallback((app: App, port: number) => {
-    const sub = app.subdomain && isProxyOperational ? app.subdomain : null;
-    invoke("open_in_browser", { port, subdomain: sub });
-  }, [isProxyOperational]);
+  const handleOpenInBrowser = useCallback(
+    (app: App, port: number) => {
+      const sub = app.subdomain && isProxyOperational ? app.subdomain : null;
+      invoke("open_in_browser", { port, subdomain: sub });
+    },
+    [isProxyOperational]
+  );
 
   useEffect(() => {
     const unlistenStarted = listen<{ id: string; port: number }>(
@@ -192,13 +229,13 @@ function AppComponent() {
       "app-stopped",
       async (event) => {
         const appId = event.payload.id;
-        
+
         setRunningApps((prev) => {
           const next = { ...prev };
           delete next[appId];
           return next;
         });
-        
+
         try {
           await invoke("remove_proxy_route", { appId });
           setProxyRoutes((prev) => {
@@ -206,9 +243,8 @@ function AppComponent() {
             delete next[appId];
             return next;
           });
-        } catch (e) {
-        }
-        
+        } catch (e) {}
+
         loadApps();
       }
     );
@@ -234,7 +270,7 @@ function AppComponent() {
       const currentRunning = await invoke<RunningApps>("get_running_apps");
       const port = currentRunning[appId];
       if (port) {
-        const app = apps.find(a => a.id === appId);
+        const app = apps.find((a) => a.id === appId);
         if (app) {
           handleOpenInBrowser(app, port);
         } else {
@@ -273,12 +309,13 @@ function AppComponent() {
 
     let name = path.split("/").pop() || "Unknown App";
     try {
-      const pkg = await invoke<{ name?: string }>("read_package_json", { path });
+      const pkg = await invoke<{ name?: string }>("read_package_json", {
+        path,
+      });
       if (pkg.name) {
         name = pkg.name;
       }
-    } catch {
-    }
+    } catch {}
 
     const id = await invoke<string>("generate_id");
     const subdomain = await invoke<string>("slugify_name", { name });
@@ -296,7 +333,7 @@ function AppComponent() {
 
     if (runningApps[id]) {
       await invoke("stop_app", { id });
-      
+
       if (proxyRoutes[id]) {
         try {
           await invoke("remove_proxy_route", { appId: id });
@@ -316,8 +353,10 @@ function AppComponent() {
   };
 
   const handleStartApp = async (app: App) => {
-    const port = app.port || (await invoke<number>("get_free_port", { preferred: null }));
-    
+    const port =
+      app.port ||
+      (await invoke<number>("get_free_port", { preferred: null }));
+
     try {
       const actualPort = await invoke<number>("start_app", {
         id: app.id,
@@ -326,7 +365,7 @@ function AppComponent() {
         port,
         subdomain: app.subdomain,
       });
-      
+
       if (app.subdomain) {
         try {
           await invoke("add_proxy_route", {
@@ -334,9 +373,9 @@ function AppComponent() {
             subdomain: app.subdomain,
             port: actualPort,
           });
-          setProxyRoutes(prev => ({
+          setProxyRoutes((prev) => ({
             ...prev,
-            [app.id]: { subdomain: app.subdomain!, port: actualPort }
+            [app.id]: { subdomain: app.subdomain!, port: actualPort },
           }));
         } catch (e) {
           console.error("Failed to add proxy route:", e);
@@ -350,11 +389,11 @@ function AppComponent() {
 
   const handleStopApp = async (id: string) => {
     await invoke("stop_app", { id });
-    
+
     if (proxyRoutes[id]) {
       try {
         await invoke("remove_proxy_route", { appId: id });
-        setProxyRoutes(prev => {
+        setProxyRoutes((prev) => {
           const next = { ...prev };
           delete next[id];
           return next;
@@ -390,7 +429,10 @@ function AppComponent() {
           });
           setProxyRoutes((prev) => ({
             ...prev,
-            [editingApp.id]: { subdomain: editingApp.subdomain!, port: runningApps[editingApp.id] }
+            [editingApp.id]: {
+              subdomain: editingApp.subdomain!,
+              port: runningApps[editingApp.id],
+            },
           }));
         } else if (proxyRoutes[editingApp.id]) {
           await invoke("remove_proxy_route", { appId: editingApp.id });
@@ -422,12 +464,13 @@ function AppComponent() {
     setSetupLoading(true);
     try {
       await invoke("install_proxy_service");
-      
+
       for (let i = 0; i < 5; i++) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        const status = await invoke<ProxyServiceStatus>("get_proxy_service_status");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const status =
+          await invoke<ProxyServiceStatus>("get_proxy_service_status");
         setServiceStatus(status);
-        
+
         if (status.installed && status.caddy_running) {
           setShowSetupWizard(false);
           break;
@@ -442,12 +485,17 @@ function AppComponent() {
   };
 
   const handleUninstallService = async () => {
-    if (!confirm("Are you sure you want to uninstall the proxy service? Your apps will only be accessible via localhost:port.")) {
+    if (
+      !confirm(
+        "Are you sure you want to uninstall the proxy service? Your apps will only be accessible via localhost:port."
+      )
+    ) {
       return;
     }
     try {
       await invoke("uninstall_proxy_service");
-      const status = await invoke<ProxyServiceStatus>("get_proxy_service_status");
+      const status =
+        await invoke<ProxyServiceStatus>("get_proxy_service_status");
       setServiceStatus(status);
     } catch (e) {
       console.error("Service uninstallation failed:", e);
@@ -459,12 +507,13 @@ function AppComponent() {
     setSetupLoading(true);
     try {
       await invoke("start_proxy_service");
-      
+
       for (let i = 0; i < 5; i++) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        const status = await invoke<ProxyServiceStatus>("get_proxy_service_status");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const status =
+          await invoke<ProxyServiceStatus>("get_proxy_service_status");
         setServiceStatus(status);
-        
+
         if (status.caddy_running) {
           break;
         }
@@ -490,412 +539,609 @@ function AppComponent() {
   const selectedApp = apps.find((a) => a.id === selectedAppId);
 
   return (
-    <div className="app-container">
-      <header className="header">
-        <h1>My Little Apps</h1>
-        <div className="header-actions">
-          <div className="proxy-status">
-            <span className={`status-indicator ${isProxyOperational ? "active" : "inactive"}`}>
-              Proxy: {isProxyOperational ? "Running" : serviceStatus?.installed ? "Stopped" : "Not installed"}
-            </span>
-            {!serviceStatus?.installed && (
-              <button className="btn btn-small" onClick={() => setShowSetupWizard(true)}>
-                Setup Proxy
-              </button>
-            )}
-            {serviceStatus?.installed && !isProxyOperational && (
-              <button 
-                className="btn btn-small btn-success" 
-                onClick={handleStartProxyService}
-                disabled={setupLoading}
-              >
-                {setupLoading ? "Starting..." : "Start Proxy"}
-              </button>
-            )}
-            {isProxyOperational && lanIp && (
-              <button className="btn btn-small" onClick={() => setShowLanInfo(true)}>
-                LAN Access
-              </button>
-            )}
-            {serviceStatus?.installed && (
-              <button className="btn btn-small btn-danger" onClick={handleUninstallService}>
-                Uninstall
-              </button>
-            )}
+    <TooltipProvider>
+      <div className="flex flex-col h-screen overflow-hidden">
+        <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">&gt;</span>
+            <h1 className="text-sm font-semibold tracking-tight">
+              my-little-apps
+            </h1>
           </div>
-          <label className="autostart-toggle">
-            <input
-              type="checkbox"
-              checked={autoStartEnabled}
-              onChange={handleToggleAutostart}
-            />
-            <span>Start manager on login</span>
-          </label>
-          <button className="btn btn-primary" onClick={handleAddApp}>
-            + Add App
-          </button>
-        </div>
-      </header>
-
-      <main className="main-content">
-        <section className="apps-list">
-          <h2>Your Apps</h2>
-          {apps.length === 0 ? (
-            <div className="empty-state">
-              <p>No apps added yet.</p>
-              <p>Click "Add App" to get started!</p>
-            </div>
-          ) : (
-            <ul>
-              {apps.map((app) => {
-                const isRunning = runningApps[app.id] !== undefined;
-                const port = runningApps[app.id];
-
-                return (
-                  <li
-                    key={app.id}
-                    className={`app-item ${selectedAppId === app.id ? "selected" : ""} ${isRunning ? "running" : ""}`}
-                    onClick={() => setSelectedAppId(app.id)}
-                  >
-                    <div className="app-info">
-                      <span className={`status-dot ${isRunning ? "running" : "stopped"}`} />
-                      <div className="app-details">
-                        <strong>{app.name}</strong>
-                        {isRunning && (
-                          <div className="url-badges">
-                            {serviceStatus?.installed && app.subdomain && (
-                              <>
-                                <span className={`url-badge lan ${!isProxyOperational ? "inactive" : ""}`}>
-                                  {app.subdomain}.local
-                                </span>
-                                <span className="url-separator">|</span>
-                              </>
-                            )}
-                            <span className="url-badge localhost">localhost:{port}</span>
-                          </div>
-                        )}
-                        <small>{app.path}</small>
-                      </div>
-                    </div>
-                    <div className="app-actions">
-                        {isRunning ? (
-                        <>
-                          <button
-                            className="btn btn-small btn-secondary"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenInBrowser(app, port);
-                            }}
-                          >
-                            Open
-                          </button>
-                          <button
-                            className="btn btn-small btn-danger"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleStopApp(app.id);
-                            }}
-                          >
-                            Stop
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          className="btn btn-small btn-success"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleStartApp(app);
-                          }}
-                        >
-                          Start
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-
-        {selectedApp && (
-          <section className="app-detail">
-            <div className="detail-header">
-              <h2>{selectedApp.name}</h2>
-              <div className="detail-actions">
-                <button
-                  className="btn btn-small"
-                  onClick={() => setEditingApp({ ...selectedApp })}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 pr-3 border-r border-border">
+              <Badge
+                variant={isProxyOperational ? "default" : "secondary"}
+                className={cn(
+                  "text-xs",
+                  isProxyOperational
+                    ? "bg-success/20 text-success border-success/30"
+                    : "bg-muted text-muted-foreground"
+                )}
+              >
+                proxy:{" "}
+                {isProxyOperational
+                  ? "running"
+                  : serviceStatus?.installed
+                    ? "stopped"
+                    : "not installed"}
+              </Badge>
+              {!serviceStatus?.installed && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={() => setShowSetupWizard(true)}
                 >
-                  Edit
-                </button>
-                <button
-                  className="btn btn-small btn-danger"
-                  onClick={() => {
-                    if (confirm("Are you sure you want to remove this app?")) {
-                      handleRemoveApp(selectedApp.id);
-                      setSelectedAppId(null);
-                    }
-                  }}
+                  setup
+                </Button>
+              )}
+              {serviceStatus?.installed && !isProxyOperational && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs text-success"
+                  onClick={handleStartProxyService}
+                  disabled={setupLoading}
                 >
-                  Remove
-                </button>
-              </div>
-            </div>
-
-            <div className="detail-info">
-              <div className="info-row">
-                <label>Path:</label>
-                <code>{selectedApp.path}</code>
-              </div>
-              <div className="info-row">
-                <label>Command:</label>
-                <code>{selectedApp.command}</code>
-              </div>
-              <div className="info-row">
-                <label>Port:</label>
-                <span>{selectedApp.port || "Auto"}</span>
-              </div>
-              <div className="info-row">
-                <label>Run on startup:</label>
-                <span>{selectedApp.run_on_startup ? "Yes" : "No"}</span>
-              </div>
-              {runningApps[selectedApp.id] && (
-                <div className="info-row urls">
-                  <label>URLs:</label>
-                  <div className="url-links">
-                    {serviceStatus?.installed && selectedApp.subdomain && (
-                      <div className={`url-link-item ${!isProxyOperational ? "inactive" : ""}`}>
-                        <code>http://{selectedApp.subdomain}.local</code>
-                        <button 
-                          className="btn-copy" 
-                          onClick={() => copyToClipboard(`http://${selectedApp.subdomain}.local`)}
-                          disabled={!isProxyOperational}
-                          title={!isProxyOperational ? "Proxy is stopped" : undefined}
-                        >
-                          {copiedUrl === `http://${selectedApp.subdomain}.local` ? "Copied!" : "Copy"}
-                        </button>
-                        {!isProxyOperational && <span className="url-status">(proxy stopped)</span>}
-                      </div>
-                    )}
-                    <div className="url-link-item">
-                      <code>http://localhost:{runningApps[selectedApp.id]}</code>
-                      <button 
-                        className="btn-copy" 
-                        onClick={() => copyToClipboard(`http://localhost:${runningApps[selectedApp.id]}`)}
-                      >
-                        {copiedUrl === `http://localhost:${runningApps[selectedApp.id]}` ? "Copied!" : "Copy"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                  {setupLoading ? "starting..." : "start"}
+                </Button>
+              )}
+              {isProxyOperational && lanIp && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={() => setShowLanInfo(true)}
+                >
+                  lan
+                </Button>
+              )}
+              {serviceStatus?.installed && (
+                <Button
+                  variant="ghost-destructive"
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={handleUninstallService}
+                >
+                  uninstall
+                </Button>
               )}
             </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="autostart"
+                checked={autoStartEnabled}
+                onCheckedChange={handleToggleAutostart}
+                className="scale-75"
+              />
+              <Label htmlFor="autostart" className="text-xs text-muted-foreground cursor-pointer">
+                autostart
+              </Label>
+            </div>
+            <Button
+              variant="default"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={handleAddApp}
+            >
+              + add app
+            </Button>
+          </div>
+        </header>
 
-            <div className="logs-section">
-              <h3>Logs</h3>
-              <div className="logs-container">
-                {(logs[selectedApp.id] || []).length === 0 ? (
-                  <p className="no-logs">No logs yet. Start the app to see output.</p>
-                ) : (
-                  <pre>
-                    {(logs[selectedApp.id] || []).map((log, i) => (
+        <main className="flex flex-1 overflow-hidden">
+          <aside className="w-80 border-r border-border bg-sidebar flex flex-col">
+            <div className="px-3 py-2 border-b border-border">
+              <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                apps ({apps.length})
+              </span>
+            </div>
+            <ScrollArea className="flex-1">
+              {apps.length === 0 ? (
+                <div className="p-4 text-center text-muted-foreground text-sm">
+                  <p>no apps added yet.</p>
+                  <p className="text-xs mt-1">click "+ add app" to start</p>
+                </div>
+              ) : (
+                <div className="py-1">
+                  {apps.map((app) => {
+                    const isRunning = runningApps[app.id] !== undefined;
+                    const port = runningApps[app.id];
+
+                    return (
                       <div
-                        key={i}
-                        className={`log-line ${log.type === "stderr" ? "error" : ""}`}
+                        key={app.id}
+                        onClick={() => setSelectedAppId(app.id)}
+                        className={cn(
+                          "group px-3 py-2 cursor-pointer border-l-2 transition-colors",
+                          selectedAppId === app.id
+                            ? "bg-accent/10 border-l-primary"
+                            : "border-l-transparent hover:bg-muted/50"
+                        )}
                       >
-                        {log.message}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium truncate">
+                              {app.name}
+                            </div>
+                            {isRunning && (
+                              <div className="flex items-center gap-1 text-xs mt-0.5">
+                                {serviceStatus?.installed && app.subdomain && (
+                                  <>
+                                    <span
+                                      className={cn(
+                                        "text-success",
+                                        !isProxyOperational && "opacity-50"
+                                      )}
+                                    >
+                                      {app.subdomain}.local
+                                    </span>
+                                    <span className="text-muted-foreground">|</span>
+                                  </>
+                                )}
+                                <span className="text-muted-foreground">
+                                  :{port}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <div
+                            className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {isRunning ? (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 text-xs px-2"
+                                  onClick={() => handleOpenInBrowser(app, port)}
+                                >
+                                  open
+                                </Button>
+                                <Button
+                                  variant="ghost-destructive"
+                                  size="sm"
+                                  className="h-6 text-xs px-2"
+                                  onClick={() => handleStopApp(app.id)}
+                                >
+                                  stop
+                                </Button>
+                              </>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 text-xs px-2 text-success hover:text-success"
+                                onClick={() => handleStartApp(app)}
+                              >
+                                start
+                              </Button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    ))}
-                    <div ref={logsEndRef} />
-                  </pre>
+                    );
+                  })}
+                </div>
+              )}
+            </ScrollArea>
+          </aside>
+
+          {selectedApp ? (
+            <section className="flex-1 flex flex-col overflow-hidden">
+              <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">&gt;</span>
+                  <h2 className="text-sm font-semibold">{selectedApp.name}</h2>
+                  {runningApps[selectedApp.id] && (
+                    <Badge
+                      variant="outline"
+                      className="text-xs bg-success/10 text-success border-success/30"
+                    >
+                      running
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setEditingApp({ ...selectedApp })}
+                  >
+                    edit
+                  </Button>
+                  <Button
+                    variant="ghost-destructive"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      if (confirm("remove this app?")) {
+                        handleRemoveApp(selectedApp.id);
+                        setSelectedAppId(null);
+                      }
+                    }}
+                  >
+                    remove
+                  </Button>
+                </div>
+              </div>
+
+              <div className="p-4 border-b border-border bg-card/50">
+                <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                  <div className="flex">
+                    <span className="text-muted-foreground w-24">path:</span>
+                    <code className="text-xs break-all">{selectedApp.path}</code>
+                  </div>
+                  <div className="flex">
+                    <span className="text-muted-foreground w-24">command:</span>
+                    <code className="text-xs">{selectedApp.command}</code>
+                  </div>
+                  <div className="flex">
+                    <span className="text-muted-foreground w-24">port:</span>
+                    <span className="text-xs">
+                      {selectedApp.port || "auto"}
+                    </span>
+                  </div>
+                  <div className="flex">
+                    <span className="text-muted-foreground w-24">autostart:</span>
+                    <span className="text-xs">
+                      {selectedApp.run_on_startup ? "yes" : "no"}
+                    </span>
+                  </div>
+                </div>
+
+                {runningApps[selectedApp.id] && (
+                  <>
+                    <Separator className="my-3" />
+                    <div className="space-y-2">
+                      <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                        urls
+                      </span>
+                      <div className="space-y-1">
+                        {serviceStatus?.installed && selectedApp.subdomain && (
+                          <div
+                            className={cn(
+                              "flex items-center gap-2",
+                              !isProxyOperational && "opacity-50"
+                            )}
+                          >
+                            <code className="text-xs text-success">
+                              http://{selectedApp.subdomain}.local
+                            </code>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 text-xs px-2"
+                              onClick={() =>
+                                copyToClipboard(
+                                  `http://${selectedApp.subdomain}.local`
+                                )
+                              }
+                              disabled={!isProxyOperational}
+                            >
+                              {copiedUrl ===
+                              `http://${selectedApp.subdomain}.local`
+                                ? "copied!"
+                                : "copy"}
+                            </Button>
+                            {!isProxyOperational && (
+                              <span className="text-xs text-warning">
+                                (proxy stopped)
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <code className="text-xs text-muted-foreground">
+                            http://localhost:{runningApps[selectedApp.id]}
+                          </code>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 text-xs px-2"
+                            onClick={() =>
+                              copyToClipboard(
+                                `http://localhost:${runningApps[selectedApp.id]}`
+                              )
+                            }
+                          >
+                            {copiedUrl ===
+                            `http://localhost:${runningApps[selectedApp.id]}`
+                              ? "copied!"
+                              : "copy"}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
-            </div>
-          </section>
-        )}
 
-        {!selectedApp && apps.length > 0 && (
-          <section className="app-detail empty">
-            <p>Select an app to view details</p>
-          </section>
-        )}
-      </main>
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="px-4 py-2 border-b border-border">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                    logs
+                  </span>
+                </div>
+                <ScrollArea className="flex-1 bg-[oklch(0.1_0.005_285.823)]">
+                  <div className="p-4 text-xs leading-relaxed">
+                    {(logs[selectedApp.id] || []).length === 0 ? (
+                      <p className="text-muted-foreground italic">
+                        no logs yet. start the app to see output.
+                      </p>
+                    ) : (
+                      <>
+                        {(logs[selectedApp.id] || []).map((log, i) => (
+                          <div
+                            key={i}
+                            className={cn(
+                              "py-0.5",
+                              log.type === "stderr" && "text-destructive"
+                            )}
+                          >
+                            {log.message}
+                          </div>
+                        ))}
+                        <div ref={logsEndRef} />
+                      </>
+                    )}
+                  </div>
+                </ScrollArea>
+              </div>
+            </section>
+          ) : (
+            <section className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+              {apps.length > 0 ? (
+                <p>select an app to view details</p>
+              ) : (
+                <p>add an app to get started</p>
+              )}
+            </section>
+          )}
+        </main>
 
-      {editingApp && (
-        <div className="modal-overlay" onClick={() => setEditingApp(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Edit App</h2>
-            <div className="form-group">
-              <label>Name</label>
-              <input
-                type="text"
-                value={editingApp.name}
-                onChange={(e) =>
-                  setEditingApp({ ...editingApp, name: e.target.value })
-                }
-              />
-            </div>
-            <div className="form-group">
-              <label>Subdomain</label>
-              <div className="subdomain-input">
-                <input
-                  type="text"
-                  value={editingApp.subdomain || ""}
-                  onChange={(e) =>
-                    setEditingApp({ ...editingApp, subdomain: e.target.value || null })
-                  }
-                  placeholder="my-app"
-                />
-                <span className="subdomain-suffix">.local</span>
+        <Dialog open={!!editingApp} onOpenChange={() => setEditingApp(null)}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-sm font-semibold">
+                <span className="text-muted-foreground">&gt;</span> edit app
+              </DialogTitle>
+            </DialogHeader>
+            {editingApp && (
+              <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <Label htmlFor="name" className="text-xs">
+                    name
+                  </Label>
+                  <Input
+                    id="name"
+                    value={editingApp.name}
+                    onChange={(e) =>
+                      setEditingApp({ ...editingApp, name: e.target.value })
+                    }
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="subdomain" className="text-xs">
+                    subdomain
+                  </Label>
+                  <div className="flex items-center">
+                    <Input
+                      id="subdomain"
+                      value={editingApp.subdomain || ""}
+                      onChange={(e) =>
+                        setEditingApp({
+                          ...editingApp,
+                          subdomain: e.target.value || null,
+                        })
+                      }
+                      placeholder="my-app"
+                      className="h-8 text-sm rounded-r-none"
+                    />
+                    <span className="h-8 px-3 flex items-center bg-muted text-muted-foreground text-sm border border-l-0 border-input">
+                      .local
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="command" className="text-xs">
+                    command
+                  </Label>
+                  <Input
+                    id="command"
+                    value={editingApp.command}
+                    onChange={(e) =>
+                      setEditingApp({ ...editingApp, command: e.target.value })
+                    }
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="port" className="text-xs">
+                    port (empty for auto)
+                  </Label>
+                  <Input
+                    id="port"
+                    type="number"
+                    value={editingApp.port || ""}
+                    onChange={(e) =>
+                      setEditingApp({
+                        ...editingApp,
+                        port: e.target.value ? parseInt(e.target.value) : null,
+                      })
+                    }
+                    placeholder="auto"
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="run_on_startup"
+                    checked={editingApp.run_on_startup}
+                    onCheckedChange={(checked) =>
+                      setEditingApp({
+                        ...editingApp,
+                        run_on_startup: checked as boolean,
+                      })
+                    }
+                  />
+                  <Label htmlFor="run_on_startup" className="text-xs cursor-pointer">
+                    run on startup
+                  </Label>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditingApp(null)}
+              >
+                cancel
+              </Button>
+              <Button size="sm" onClick={handleSaveApp}>
+                save
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showSetupWizard} onOpenChange={setShowSetupWizard}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="text-sm font-semibold">
+                <span className="text-muted-foreground">&gt;</span> proxy setup
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2 text-sm">
+              <p className="text-muted-foreground">
+                install a background proxy to access apps via clean URLs like{" "}
+                <code className="text-primary">my-app.local</code>
+              </p>
+
+              <div className="bg-muted/50 p-3 space-y-2">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                  status
+                </span>
+                <div className="space-y-1 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "w-2 h-2 rounded-full",
+                        serviceStatus?.installed ? "bg-success" : "bg-warning"
+                      )}
+                    />
+                    <span>
+                      service: {serviceStatus?.installed ? "installed" : "not installed"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "w-2 h-2 rounded-full",
+                        serviceStatus?.caddy_running ? "bg-success" : "bg-warning"
+                      )}
+                    />
+                    <span>
+                      proxy: {serviceStatus?.caddy_running ? "running" : "not running"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-muted/50 p-3 space-y-2">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                  what will be installed
+                </span>
+                <ul className="text-xs text-muted-foreground list-disc list-inside space-y-1">
+                  <li>background proxy service (caddy)</li>
+                  <li>mDNS advertising for LAN access</li>
+                </ul>
+                <p className="text-xs text-warning mt-2 p-2 bg-warning/10 border border-warning/30">
+                  one-time setup requiring admin password. no further passwords needed after.
+                </p>
               </div>
             </div>
-            <div className="form-group">
-              <label>Command</label>
-              <input
-                type="text"
-                value={editingApp.command}
-                onChange={(e) =>
-                  setEditingApp({ ...editingApp, command: e.target.value })
-                }
-              />
-            </div>
-            <div className="form-group">
-              <label>Port (leave empty for auto)</label>
-              <input
-                type="number"
-                value={editingApp.port || ""}
-                onChange={(e) =>
-                  setEditingApp({
-                    ...editingApp,
-                    port: e.target.value ? parseInt(e.target.value) : null,
-                  })
-                }
-                placeholder="Auto"
-              />
-            </div>
-            <div className="form-group checkbox">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={editingApp.run_on_startup}
-                  onChange={(e) =>
-                    setEditingApp({
-                      ...editingApp,
-                      run_on_startup: e.target.checked,
-                    })
-                  }
-                />
-                Run on startup
-              </label>
-            </div>
-            <div className="modal-actions">
-              <button className="btn" onClick={() => setEditingApp(null)}>
-                Cancel
-              </button>
-              <button className="btn btn-primary" onClick={handleSaveApp}>
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showSetupWizard && (
-        <div className="modal-overlay" onClick={() => setShowSetupWizard(false)}>
-          <div className="modal dns-setup-modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Proxy Service Setup</h2>
-            <p>
-              To access your apps via clean URLs like <code>my-app.local</code>,
-              we need to install a background proxy service.
-            </p>
-            
-            <div className="dns-status-details">
-              <h3>Current Status</h3>
-              <ul>
-                <li className={serviceStatus?.installed ? "ok" : "missing"}>
-                  Service: {serviceStatus?.installed ? "Installed" : "Not installed"}
-                </li>
-                <li className={serviceStatus?.caddy_running ? "ok" : "missing"}>
-                  Proxy: {serviceStatus?.caddy_running ? "Running" : "Not running"}
-                </li>
-              </ul>
-            </div>
-
-            <div className="dns-setup-info">
-              <h3>What will be installed:</h3>
-              <ul>
-                <li>Background proxy service (Caddy)</li>
-                <li>mDNS advertising for LAN access</li>
-              </ul>
-              <p className="warning">
-                This is a one-time setup that requires your administrator password.
-                After installation, no further passwords will be needed.
-              </p>
-            </div>
-
-            <div className="modal-actions">
-              <button className="btn" onClick={() => setShowSetupWizard(false)}>
-                Skip for now
-              </button>
-              <button 
-                className="btn btn-primary" 
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowSetupWizard(false)}
+              >
+                skip
+              </Button>
+              <Button
+                size="sm"
                 onClick={handleInstallService}
                 disabled={setupLoading}
               >
-                {setupLoading ? "Installing..." : "Install Service"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+                {setupLoading ? "installing..." : "install"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-      {showLanInfo && (
-        <div className="modal-overlay" onClick={() => setShowLanInfo(false)}>
-          <div className="modal lan-info-modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Access from Other Devices</h2>
-            <p>
-              Your apps are automatically discoverable on the local network via mDNS (Bonjour).
-            </p>
-            
-            <div className="lan-setup-steps">
-              <h3>How to Access</h3>
-              <p>From any device on the same Wi-Fi network, simply open:</p>
-              <div className="lan-url-example">
-                <code>http://your-app.local</code>
+        <Dialog open={showLanInfo} onOpenChange={setShowLanInfo}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="text-sm font-semibold">
+                <span className="text-muted-foreground">&gt;</span> lan access
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2 text-sm">
+              <p className="text-muted-foreground">
+                apps are discoverable on the local network via mDNS (Bonjour).
+              </p>
+
+              <div className="bg-muted/50 p-3 space-y-2">
+                <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                  how to access
+                </span>
+                <p className="text-xs text-muted-foreground">
+                  from any device on the same network:
+                </p>
+                <div className="bg-background p-3 text-center">
+                  <code className="text-success text-lg">
+                    http://your-app.local
+                  </code>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  e.g., if subdomain is "zrabi-dev", open{" "}
+                  <code className="text-primary">http://zrabi-dev.local</code> in Safari on
+                  your iPhone.
+                </p>
               </div>
-              <p className="info-note">
-                For example, if your app's subdomain is "zrabi-dev", open <code>http://zrabi-dev.local</code> in Safari on your iPhone.
-              </p>
-              <p className="info-note">
-                This works automatically - no DNS configuration needed!
-              </p>
-            </div>
 
-            <div className="lan-info-details">
-              <div className="info-row">
-                <label>Your Mac's IP:</label>
-                <div className="ip-display">
-                  <code>{lanIp}</code>
-                  <button 
-                    className="btn-copy" 
-                    onClick={() => lanIp && copyToClipboard(lanIp)}
-                  >
-                    {copiedUrl === lanIp ? "Copied!" : "Copy"}
-                  </button>
+              <div className="bg-muted/50 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">your IP:</span>
+                  <div className="flex items-center gap-2">
+                    <code className="text-success">{lanIp}</code>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-xs px-2"
+                      onClick={() => lanIp && copyToClipboard(lanIp)}
+                    >
+                      {copiedUrl === lanIp ? "copied!" : "copy"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
-
-            <div className="modal-actions">
-              <button className="btn btn-primary" onClick={() => setShowLanInfo(false)}>
-                Got it
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+            <DialogFooter>
+              <Button size="sm" onClick={() => setShowLanInfo(false)}>
+                done
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </TooltipProvider>
   );
 }
 

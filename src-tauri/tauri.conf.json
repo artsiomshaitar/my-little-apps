@@ -14,10 +14,10 @@
       {
         "label": "main",
         "title": "My Little Apps",
-        "width": 900,
-        "height": 650,
-        "minWidth": 700,
-        "minHeight": 500,
+        "width": 1125,
+        "height": 812,
+        "minWidth": 875,
+        "minHeight": 625,
         "center": true,
         "visible": true
       }
