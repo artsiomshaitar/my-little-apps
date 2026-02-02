@@ -6,15 +6,23 @@ import Database from "@tauri-apps/plugin-sql";
 import type { App, RunningApps, LogEntry, AppLogs, ProxyRoute } from "@/types";
 
 interface UseAppsOptions {
-  addProxyRoute: (appId: string, subdomain: string, port: number) => Promise<void>;
+  addProxyRoute: (
+    appId: string,
+    subdomain: string,
+    port: number
+  ) => Promise<void>;
   removeProxyRoute: (appId: string) => Promise<void>;
-  setProxyRoutes: React.Dispatch<React.SetStateAction<{ [id: string]: ProxyRoute }>>;
+  proxyRoutes: { [id: string]: ProxyRoute };
+  setProxyRoutes: React.Dispatch<
+    React.SetStateAction<{ [id: string]: ProxyRoute }>
+  >;
   isProxyOperational: boolean | undefined;
 }
 
 export function useApps({
   addProxyRoute,
   removeProxyRoute,
+  proxyRoutes,
   setProxyRoutes,
   isProxyOperational,
 }: UseAppsOptions) {
@@ -50,7 +58,8 @@ export function useApps({
         if (app.run_on_startup && !currentRunning[app.id]) {
           try {
             const port =
-              app.port || (await invoke<number>("get_free_port", { preferred: null }));
+              app.port ||
+              (await invoke<number>("get_free_port", { preferred: null }));
             const actualPort = await invoke<number>("start_app", {
               id: app.id,
               path: app.path,
@@ -96,7 +105,10 @@ export function useApps({
               });
               newProxyRoutes[app.id] = { subdomain: app.subdomain, port };
             } catch (e) {
-              console.error(`Failed to re-register proxy route for ${app.name}:`, e);
+              console.error(
+                `Failed to re-register proxy route for ${app.name}:`,
+                e
+              );
             }
           }
         }
@@ -119,13 +131,16 @@ export function useApps({
   );
 
   useEffect(() => {
-    const unlistenStarted = listen<{ id: string; port: number }>("app-started", (event) => {
-      setRunningApps((prev) => ({
-        ...prev,
-        [event.payload.id]: event.payload.port,
-      }));
-      loadApps();
-    });
+    const unlistenStarted = listen<{ id: string; port: number }>(
+      "app-started",
+      (event) => {
+        setRunningApps((prev) => ({
+          ...prev,
+          [event.payload.id]: event.payload.port,
+        }));
+        loadApps();
+      }
+    );
 
     const unlistenStopped = listen<{ id: string; code: number | null }>(
       "app-stopped",
@@ -200,7 +215,10 @@ export function useApps({
 
     const path = selected as string;
 
-    const existing = await db.select<App[]>("SELECT * FROM apps WHERE path = $1", [path]);
+    const existing = await db.select<App[]>(
+      "SELECT * FROM apps WHERE path = $1",
+      [path]
+    );
     if (existing.length > 0) {
       alert("This app is already added!");
       return;
@@ -208,7 +226,9 @@ export function useApps({
 
     let name = path.split("/").pop() || "Unknown App";
     try {
-      const pkg = await invoke<{ name?: string }>("read_package_json", { path });
+      const pkg = await invoke<{ name?: string }>("read_package_json", {
+        path,
+      });
       if (pkg.name) {
         name = pkg.name;
       }
@@ -243,7 +263,9 @@ export function useApps({
 
   const startApp = useCallback(
     async (app: App) => {
-      const port = app.port || (await invoke<number>("get_free_port", { preferred: null }));
+      const port =
+        app.port ||
+        (await invoke<number>("get_free_port", { preferred: null }));
 
       try {
         const actualPort = await invoke<number>("start_app", {
@@ -285,7 +307,9 @@ export function useApps({
           (a) => a.id !== editingApp.id && a.subdomain === newSubdomain
         );
         if (conflictingApp) {
-          alert(`Subdomain "${newSubdomain}" is already used by "${conflictingApp.name}"`);
+          alert(
+            `Subdomain "${newSubdomain}" is already used by "${conflictingApp.name}"`
+          );
           return false;
         }
       }
@@ -308,12 +332,25 @@ export function useApps({
         const subdomainChanged = oldSubdomain !== newSubdomain;
 
         try {
-          if (subdomainChanged && oldSubdomain) {
-            await removeProxyRoute(editingApp.id);
+          if (subdomainChanged && oldSubdomain && proxyRoutes[editingApp.id]) {
+            await invoke("remove_proxy_route", { appId: editingApp.id });
+            setProxyRoutes((prev) => {
+              const next = { ...prev };
+              delete next[editingApp.id];
+              return next;
+            });
           }
 
           if (newSubdomain) {
-            await addProxyRoute(editingApp.id, newSubdomain, port);
+            await invoke("add_proxy_route", {
+              appId: editingApp.id,
+              subdomain: newSubdomain,
+              port,
+            });
+            setProxyRoutes((prev) => ({
+              ...prev,
+              [editingApp.id]: { subdomain: newSubdomain, port },
+            }));
           }
         } catch (e) {
           console.error("Failed to update proxy route:", e);
@@ -323,7 +360,7 @@ export function useApps({
       loadApps();
       return true;
     },
-    [db, apps, loadApps, addProxyRoute, removeProxyRoute]
+    [db, apps, loadApps, proxyRoutes, setProxyRoutes]
   );
 
   return {

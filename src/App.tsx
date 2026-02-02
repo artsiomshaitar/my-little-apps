@@ -49,6 +49,7 @@ function AppComponent() {
   } = useApps({
     addProxyRoute,
     removeProxyRoute,
+    proxyRoutes,
     setProxyRoutes,
     isProxyOperational,
   });

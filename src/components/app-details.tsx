@@ -8,7 +8,9 @@ import { confirm } from "@/components/confirm-dialog";
 import type { App, LogEntry, ProxyServiceStatus } from "@/types";
 
 const emptyLogsMessage = (
-  <p className="text-muted-foreground italic">no logs yet. start the app to see output.</p>
+  <p className="text-muted-foreground italic">
+    no logs yet. start the app to see output.
+  </p>
 );
 
 interface LogLineProps {
@@ -39,7 +41,9 @@ const AppLogs = memo(function AppLogs({ logs }: AppLogsProps) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="px-4 py-2 border-b border-border">
-        <span className="text-xs text-muted-foreground uppercase tracking-wider">logs</span>
+        <span className="text-xs text-muted-foreground uppercase tracking-wider">
+          logs
+        </span>
       </div>
       <ScrollArea className="flex-1 min-h-0 bg-[oklch(0.1_0.005_285.823)]">
         <div className="p-4 text-xs leading-relaxed">
@@ -91,11 +95,16 @@ const AppUrls = memo(function AppUrls({
     <>
       <Separator className="my-3" />
       <div className="space-y-2">
-        <span className="text-xs text-muted-foreground uppercase tracking-wider">urls</span>
+        <span className="text-xs text-muted-foreground uppercase tracking-wider">
+          urls
+        </span>
         <div className="space-y-1">
           {serviceInstalled && proxyUrl ? (
             <div
-              className={cn("flex items-center gap-2", !isProxyOperational && "opacity-50")}
+              className={cn(
+                "flex items-center gap-2",
+                !isProxyOperational && "opacity-50"
+              )}
             >
               <code className="text-xs text-success">{proxyUrl}</code>
               <Button
@@ -113,7 +122,9 @@ const AppUrls = memo(function AppUrls({
             </div>
           ) : null}
           <div className="flex items-center gap-2">
-            <code className="text-xs text-muted-foreground">{localhostUrl}</code>
+            <code className="text-xs text-muted-foreground">
+              {localhostUrl}
+            </code>
             <Button
               variant="ghost"
               size="sm"
@@ -176,7 +187,12 @@ export const AppDetails = memo(function AppDetails({
           ) : null}
         </div>
         <div className="flex gap-2">
-          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onEdit}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={onEdit}
+          >
             edit
           </Button>
           <Button
@@ -192,20 +208,20 @@ export const AppDetails = memo(function AppDetails({
 
       <div className="p-4 border-b border-border bg-card/50">
         <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-          <div className="flex">
-            <span className="text-muted-foreground w-24">path:</span>
+          <div className="flex items-center gap-4">
+            <span className="text-muted-foreground">path:</span>
             <code className="text-xs break-all">{app.path}</code>
           </div>
-          <div className="flex">
-            <span className="text-muted-foreground w-24">command:</span>
+          <div className="flex items-center gap-4">
+            <span className="text-muted-foreground">command:</span>
             <code className="text-xs">{app.command}</code>
           </div>
-          <div className="flex">
-            <span className="text-muted-foreground w-24">port:</span>
+          <div className="flex items-center gap-4">
+            <span className="text-muted-foreground">port:</span>
             <span className="text-xs">{app.port || "auto"}</span>
           </div>
-          <div className="flex">
-            <span className="text-muted-foreground w-24">autostart:</span>
+          <div className="flex items-center gap-4">
+            <span className="text-muted-foreground">autostart:</span>
             <span className="text-xs">{app.run_on_startup ? "yes" : "no"}</span>
           </div>
         </div>
@@ -232,7 +248,9 @@ interface EmptyAppDetailsProps {
   hasApps: boolean;
 }
 
-export const EmptyAppDetails = memo(function EmptyAppDetails({ hasApps }: EmptyAppDetailsProps) {
+export const EmptyAppDetails = memo(function EmptyAppDetails({
+  hasApps,
+}: EmptyAppDetailsProps) {
   return (
     <section className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
       {hasApps ? selectAppMessage : addAppMessage}

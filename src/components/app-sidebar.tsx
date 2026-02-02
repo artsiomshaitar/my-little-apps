@@ -40,7 +40,7 @@ const AppListItem = memo(function AppListItem({
     <div
       onClick={() => onSelect(app.id)}
       className={cn(
-        "group px-3 py-2 cursor-pointer border-l-2 transition-colors",
+        "group px-3 py-2 cursor-pointer border-l-3 transition-colors",
         isSelected
           ? "bg-accent/10 border-l-primary"
           : "border-l-transparent hover:bg-muted/50"
@@ -53,7 +53,12 @@ const AppListItem = memo(function AppListItem({
             <div className="flex items-center gap-1 text-xs mt-0.5">
               {serviceInstalled && app.subdomain ? (
                 <>
-                  <span className={cn("text-success", !isProxyOperational && "opacity-50")}>
+                  <span
+                    className={cn(
+                      "text-success",
+                      !isProxyOperational && "opacity-50"
+                    )}
+                  >
                     {app.subdomain}.local
                   </span>
                   <span className="text-muted-foreground">|</span>

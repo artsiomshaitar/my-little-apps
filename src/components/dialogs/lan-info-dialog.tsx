@@ -39,20 +39,17 @@ export const LanInfoDialog = memo(function LanInfoDialog({
             <span className="text-muted-foreground">&gt;</span> lan access
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 py-2 text-sm">
-          <p className="text-muted-foreground">
+        <div className="space-y-4 py-2">
+          <p className="text-muted-foreground text-xs">
             apps are discoverable on the local network via mDNS (Bonjour).
           </p>
-
-          <div className="bg-muted/50 p-3 space-y-2">
-            <span className="text-xs text-muted-foreground uppercase tracking-wider">
-              how to access
-            </span>
+          <div className="space-y-2">
+            <span className="text-xs text-muted-foreground">how to access</span>
             <p className="text-xs text-muted-foreground">
               from any device on the same network:
             </p>
-            <div className="bg-background p-3 text-center">
-              <code className="text-success text-lg">http://your-app.local</code>
+            <div className="bg-muted px-3 py-2">
+              <code className="text-success text-sm">http://your-app.local</code>
             </div>
             <p className="text-xs text-muted-foreground">
               e.g., if subdomain is "zrabi-dev", open{" "}
@@ -60,21 +57,18 @@ export const LanInfoDialog = memo(function LanInfoDialog({
               your iPhone.
             </p>
           </div>
-
-          <div className="bg-muted/50 p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">your IP:</span>
-              <div className="flex items-center gap-2">
-                <code className="text-success">{lanIp}</code>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 text-xs px-2"
-                  onClick={() => lanIp && copyToClipboard(lanIp)}
-                >
-                  {copiedUrl === lanIp ? "copied!" : "copy"}
-                </Button>
-              </div>
+          <div className="space-y-2">
+            <span className="text-xs text-muted-foreground">your IP</span>
+            <div className="flex items-center gap-2">
+              <code className="text-xs text-success">{lanIp ?? "—"}</code>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => lanIp && copyToClipboard(lanIp)}
+                disabled={!lanIp}
+              >
+                {copiedUrl === lanIp ? "copied!" : "copy"}
+              </Button>
             </div>
           </div>
         </div>
