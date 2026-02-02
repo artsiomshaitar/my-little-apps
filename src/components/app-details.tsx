@@ -196,7 +196,7 @@ export const AppDetails = memo(function AppDetails({
             edit
           </Button>
           <Button
-            variant="ghost-destructive"
+            variant="destructive"
             size="sm"
             className="h-7 text-xs"
             onClick={handleRemove}

@@ -36,8 +36,8 @@ export const AppHeader = memo(function AppHeader({
   const proxyStatusText = isProxyOperational
     ? "running"
     : serviceStatus?.installed
-      ? "stopped"
-      : "not installed";
+    ? "stopped"
+    : "not installed";
 
   return (
     <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
@@ -91,7 +91,7 @@ export const AppHeader = memo(function AppHeader({
           ) : null}
           {serviceStatus?.installed ? (
             <Button
-              variant="ghost-destructive"
+              variant="destructive"
               size="sm"
               className="h-6 text-xs"
               onClick={onUninstallProxy}
@@ -107,11 +107,19 @@ export const AppHeader = memo(function AppHeader({
             onCheckedChange={onToggleAutostart}
             className="scale-75"
           />
-          <Label htmlFor="autostart" className="text-xs text-muted-foreground cursor-pointer">
+          <Label
+            htmlFor="autostart"
+            className="text-xs text-muted-foreground cursor-pointer"
+          >
             autostart
           </Label>
         </div>
-        <Button variant="default" size="sm" className="h-7 text-xs" onClick={onAddApp}>
+        <Button
+          variant="default"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={onAddApp}
+        >
           + add app
         </Button>
       </div>

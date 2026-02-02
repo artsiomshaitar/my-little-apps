@@ -42,7 +42,7 @@ const AppListItem = memo(function AppListItem({
       className={cn(
         "group px-3 py-2 cursor-pointer border-l-3 transition-colors",
         isSelected
-          ? "bg-accent/10 border-l-primary"
+          ? "bg-accent border-l-primary"
           : "border-l-transparent hover:bg-muted/50"
       )}
     >
@@ -83,7 +83,7 @@ const AppListItem = memo(function AppListItem({
                 open
               </Button>
               <Button
-                variant="ghost-destructive"
+                variant="destructive"
                 size="sm"
                 className="h-6 text-xs px-2"
                 onClick={() => onStop(app.id)}
