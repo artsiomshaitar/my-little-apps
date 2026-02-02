@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import Database from "@tauri-apps/plugin-sql";
-import type { App, RunningApps, LogEntry, AppLogs, ProxyRoute } from "@/types";
+import type { App, RunningApps, AppLogs, ProxyRoute } from "@/types";
 
 interface UseAppsOptions {
   addProxyRoute: (

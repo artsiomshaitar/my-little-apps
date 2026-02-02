@@ -106,7 +106,14 @@ const AppUrls = memo(function AppUrls({
                 !isProxyOperational && "opacity-50"
               )}
             >
-              <code className="text-xs text-success">{proxyUrl}</code>
+              <a
+                href={proxyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-success underline-offset-2 hover:underline cursor-pointer"
+              >
+                {proxyUrl}
+              </a>
               <Button
                 variant="ghost"
                 size="sm"
@@ -122,9 +129,14 @@ const AppUrls = memo(function AppUrls({
             </div>
           ) : null}
           <div className="flex items-center gap-2">
-            <code className="text-xs text-muted-foreground">
+            <a
+              href={localhostUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-muted-foreground underline-offset-2 hover:underline cursor-pointer"
+            >
               {localhostUrl}
-            </code>
+            </a>
             <Button
               variant="ghost"
               size="sm"

@@ -1,4 +1,4 @@
-import { useState, useCallback, createContext, useContext } from "react";
+import { useState, useCallback, createContext } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,13 +24,19 @@ interface ConfirmState {
   resolve: ((value: boolean) => void) | null;
 }
 
-type ShowConfirmFn = (message: string, options?: ConfirmOptions) => Promise<boolean>;
+type ShowConfirmFn = (
+  message: string,
+  options?: ConfirmOptions
+) => Promise<boolean>;
 
 const ConfirmContext = createContext<ShowConfirmFn | null>(null);
 
 let globalShowConfirm: ShowConfirmFn | null = null;
 
-export function confirm(message: string, options?: ConfirmOptions): Promise<boolean> {
+export function confirm(
+  message: string,
+  options?: ConfirmOptions
+): Promise<boolean> {
   if (!globalShowConfirm) {
     console.error("ConfirmDialogProvider not mounted");
     return Promise.resolve(false);
@@ -38,7 +44,11 @@ export function confirm(message: string, options?: ConfirmOptions): Promise<bool
   return globalShowConfirm(message, options);
 }
 
-export function ConfirmDialogProvider({ children }: { children: React.ReactNode }) {
+export function ConfirmDialogProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [state, setState] = useState<ConfirmState>({
     open: false,
     message: "",
@@ -67,7 +77,10 @@ export function ConfirmDialogProvider({ children }: { children: React.ReactNode 
   return (
     <ConfirmContext.Provider value={showConfirm}>
       {children}
-      <AlertDialog open={state.open} onOpenChange={(open) => !open && handleResponse(false)}>
+      <AlertDialog
+        open={state.open}
+        onOpenChange={(open) => !open && handleResponse(false)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="text-sm font-semibold">
