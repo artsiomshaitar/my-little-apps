@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -73,6 +73,14 @@ function AppComponent() {
   const [showLanInfo, setShowLanInfo] = useState(false);
   const [setupLoading, setSetupLoading] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
+
+  const subdomainConflict = useMemo(() => {
+    if (!editingApp?.subdomain) return null;
+    const conflict = apps.find(
+      (a) => a.id !== editingApp.id && a.subdomain === editingApp.subdomain
+    );
+    return conflict ? conflict.name : null;
+  }, [editingApp?.subdomain, editingApp?.id, apps]);
 
   useEffect(() => {
     const initDb = async () => {
@@ -407,6 +415,20 @@ function AppComponent() {
   const handleSaveApp = async () => {
     if (!editingApp || !db) return;
 
+    const originalApp = apps.find((a) => a.id === editingApp.id);
+    const oldSubdomain = originalApp?.subdomain;
+    const newSubdomain = editingApp.subdomain;
+
+    if (newSubdomain) {
+      const conflictingApp = apps.find(
+        (a) => a.id !== editingApp.id && a.subdomain === newSubdomain
+      );
+      if (conflictingApp) {
+        alert(`Subdomain "${newSubdomain}" is already used by "${conflictingApp.name}"`);
+        return;
+      }
+    }
+
     await db.execute(
       "UPDATE apps SET name = $1, command = $2, port = $3, run_on_startup = $4, subdomain = $5 WHERE id = $6",
       [
@@ -420,27 +442,32 @@ function AppComponent() {
     );
 
     if (runningApps[editingApp.id]) {
+      const port = runningApps[editingApp.id];
+      const subdomainChanged = oldSubdomain !== newSubdomain;
+
       try {
-        if (editingApp.subdomain) {
-          await invoke("add_proxy_route", {
-            appId: editingApp.id,
-            subdomain: editingApp.subdomain,
-            port: runningApps[editingApp.id],
-          });
-          setProxyRoutes((prev) => ({
-            ...prev,
-            [editingApp.id]: {
-              subdomain: editingApp.subdomain!,
-              port: runningApps[editingApp.id],
-            },
-          }));
-        } else if (proxyRoutes[editingApp.id]) {
+        if (subdomainChanged && oldSubdomain && proxyRoutes[editingApp.id]) {
           await invoke("remove_proxy_route", { appId: editingApp.id });
           setProxyRoutes((prev) => {
             const next = { ...prev };
             delete next[editingApp.id];
             return next;
           });
+        }
+
+        if (newSubdomain) {
+          await invoke("add_proxy_route", {
+            appId: editingApp.id,
+            subdomain: newSubdomain,
+            port,
+          });
+          setProxyRoutes((prev) => ({
+            ...prev,
+            [editingApp.id]: {
+              subdomain: newSubdomain,
+              port,
+            },
+          }));
         }
       } catch (e) {
         console.error("Failed to update proxy route:", e);
@@ -866,7 +893,7 @@ function AppComponent() {
                     logs
                   </span>
                 </div>
-                <ScrollArea className="flex-1 bg-[oklch(0.1_0.005_285.823)]">
+                <ScrollArea className="flex-1 min-h-0 bg-[oklch(0.1_0.005_285.823)]">
                   <div className="p-4 text-xs leading-relaxed">
                     {(logs[selectedApp.id] || []).length === 0 ? (
                       <p className="text-muted-foreground italic">
@@ -940,12 +967,20 @@ function AppComponent() {
                         })
                       }
                       placeholder="my-app"
-                      className="h-8 text-sm rounded-r-none"
+                      className={cn(
+                        "h-8 text-sm rounded-r-none",
+                        subdomainConflict && "border-destructive focus-visible:ring-destructive"
+                      )}
                     />
-                    <span className="h-8 px-3 flex items-center bg-muted text-muted-foreground text-sm border border-l-0 border-input">
+                    <span className="h-8 px-3 flex items-center bg-muted text-muted-foreground text-sm border border-l-0 border-input rounded-r-md">
                       .local
                     </span>
                   </div>
+                  {subdomainConflict && (
+                    <p className="text-xs text-destructive">
+                      already used by "{subdomainConflict}"
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="command" className="text-xs">
@@ -1003,7 +1038,7 @@ function AppComponent() {
               >
                 cancel
               </Button>
-              <Button size="sm" onClick={handleSaveApp}>
+              <Button size="sm" onClick={handleSaveApp} disabled={!!subdomainConflict}>
                 save
               </Button>
             </DialogFooter>

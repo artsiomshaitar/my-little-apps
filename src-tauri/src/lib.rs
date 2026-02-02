@@ -492,6 +492,19 @@ async fn add_proxy_route(
     subdomain: String,
     port: i32,
 ) -> Result<(), String> {
+    let old_subdomain = {
+        let routes = proxy_state.routes.lock().await;
+        routes.get(&app_id).map(|r| r.subdomain.clone())
+    };
+
+    if let Some(old_sub) = &old_subdomain {
+        if old_sub != &subdomain {
+            if let Err(e) = mdns_registry.unregister(old_sub) {
+                eprintln!("Failed to unregister old mDNS for {}: {}", old_sub, e);
+            }
+        }
+    }
+
     proxy::add_route(&proxy_state, &app_id, &subdomain, port).await?;
     
     if let Some(lan_ip) = dns::get_lan_ip() {
