@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { info, error } from "@tauri-apps/plugin-log";
 import Database from "@tauri-apps/plugin-sql";
-import type { App, RunningApps, AppLogs, ProxyRoute } from "@/types";
+import type { App, RunningApps, AppLogs, AppsUsage, ProxyRoute } from "@/types";
 
 interface UseAppsOptions {
   addProxyRoute: (
@@ -29,6 +29,7 @@ export function useApps({
 }: UseAppsOptions) {
   const [apps, setApps] = useState<App[]>([]);
   const [runningApps, setRunningApps] = useState<RunningApps>({});
+  const [appsUsage, setAppsUsage] = useState<AppsUsage>({});
   const [logs, setLogs] = useState<AppLogs>({});
   const [db, setDb] = useState<Database | null>(null);
   const appsRef = useRef<App[]>([]);
@@ -211,6 +212,15 @@ export function useApps({
       unlistenOpenApp.then((fn) => fn());
     };
   }, [loadApps, handleOpenInBrowser, setProxyRoutes]);
+
+  useEffect(() => {
+    const unlisten = listen<AppsUsage>("app-usage", (event) => {
+      setAppsUsage(event.payload);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   const addApp = useCallback(async () => {
     try {
@@ -399,6 +409,7 @@ export function useApps({
   return {
     apps,
     runningApps,
+    appsUsage,
     logs,
     addApp,
     removeApp,

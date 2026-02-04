@@ -23,6 +23,15 @@ export interface RunningApps {
   [id: string]: number;
 }
 
+export interface AppUsage {
+  cpu: number;
+  memory: number;
+}
+
+export interface AppsUsage {
+  [id: string]: AppUsage;
+}
+
 export interface LogEntry {
   type: "stdout" | "stderr";
   message: string;

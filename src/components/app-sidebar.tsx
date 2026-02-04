@@ -2,7 +2,11 @@ import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import type { App, RunningApps, ProxyServiceStatus } from "@/types";
+import type { App, AppUsage, AppsUsage, RunningApps, ProxyServiceStatus } from "@/types";
+
+function formatMB(bytes: number): string {
+  return (bytes / 1024 / 1024).toFixed(1);
+}
 
 const emptyStateContent = (
   <div className="p-4 text-center text-muted-foreground text-sm">
@@ -16,8 +20,7 @@ interface AppListItemProps {
   isSelected: boolean;
   isRunning: boolean;
   port: number | undefined;
-  serviceInstalled: boolean;
-  isProxyOperational: boolean | undefined;
+  usage: AppUsage | undefined;
   onSelect: (id: string) => void;
   onStart: (app: App) => void;
   onStop: (id: string) => void;
@@ -29,13 +32,19 @@ const AppListItem = memo(function AppListItem({
   isSelected,
   isRunning,
   port,
-  serviceInstalled,
-  isProxyOperational,
+  usage,
   onSelect,
   onStart,
   onStop,
   onOpen,
 }: AppListItemProps) {
+  const usageLine =
+    isRunning && port
+      ? usage
+        ? `${usage.cpu.toFixed(1)}% CPU · ${formatMB(usage.memory)} MB`
+        : "—% CPU · — MB"
+      : null;
+
   return (
     <div
       onClick={() => onSelect(app.id)}
@@ -49,22 +58,9 @@ const AppListItem = memo(function AppListItem({
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium truncate">{app.name}</div>
-          {isRunning && port ? (
-            <div className="flex items-center gap-1 text-xs mt-0.5">
-              {serviceInstalled && app.subdomain ? (
-                <>
-                  <span
-                    className={cn(
-                      "text-success",
-                      !isProxyOperational && "opacity-50"
-                    )}
-                  >
-                    {app.subdomain}.local
-                  </span>
-                  <span className="text-muted-foreground">|</span>
-                </>
-              ) : null}
-              <span className="text-muted-foreground">:{port}</span>
+          {usageLine ? (
+            <div className="text-xs mt-0.5 text-muted-foreground">
+              {usageLine}
             </div>
           ) : null}
         </div>
@@ -110,6 +106,7 @@ const AppListItem = memo(function AppListItem({
 interface AppSidebarProps {
   apps: App[];
   runningApps: RunningApps;
+  appsUsage: AppsUsage;
   selectedAppId: string | null;
   serviceStatus: ProxyServiceStatus | null;
   isProxyOperational: boolean | undefined;
@@ -122,9 +119,10 @@ interface AppSidebarProps {
 export const AppSidebar = memo(function AppSidebar({
   apps,
   runningApps,
+  appsUsage,
   selectedAppId,
-  serviceStatus,
-  isProxyOperational,
+  serviceStatus: _serviceStatus,
+  isProxyOperational: _isProxyOperational,
   onSelectApp,
   onStartApp,
   onStopApp,
@@ -149,8 +147,7 @@ export const AppSidebar = memo(function AppSidebar({
                 isSelected={selectedAppId === app.id}
                 isRunning={runningApps[app.id] !== undefined}
                 port={runningApps[app.id]}
-                serviceInstalled={serviceStatus?.installed ?? false}
-                isProxyOperational={isProxyOperational}
+                usage={appsUsage[app.id]}
                 onSelect={onSelectApp}
                 onStart={onStartApp}
                 onStop={onStopApp}

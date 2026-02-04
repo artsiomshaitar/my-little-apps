@@ -39,6 +39,7 @@ function AppComponent() {
   const {
     apps,
     runningApps,
+    appsUsage,
     logs,
     addApp,
     removeApp,
@@ -139,6 +140,7 @@ function AppComponent() {
           <AppSidebar
             apps={apps}
             runningApps={runningApps}
+            appsUsage={appsUsage}
             selectedAppId={selectedAppId}
             serviceStatus={serviceStatus}
             isProxyOperational={isProxyOperational}

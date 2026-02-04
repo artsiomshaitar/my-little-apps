@@ -46,6 +46,12 @@ pub struct RunningProcess {
     pub subdomain: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppUsage {
+    pub cpu: f32,
+    pub memory: u64,
+}
+
 // App state to track running processes
 pub struct AppState {
     pub processes: Arc<Mutex<HashMap<String, RunningProcess>>>,
@@ -540,6 +546,36 @@ async fn get_running_apps(state: State<'_, AppState>) -> Result<HashMap<String, 
     Ok(processes.iter().map(|(k, v)| (k.clone(), v.port)).collect())
 }
 
+async fn emit_app_usage(app_handle: &AppHandle) {
+    let pids: Vec<(String, u32)> = {
+        let state = app_handle.state::<AppState>();
+        let processes = state.processes.lock().await;
+        processes
+            .iter()
+            .map(|(id, p)| (id.clone(), p.child.pid()))
+            .collect()
+    };
+    if pids.is_empty() {
+        let _ = app_handle.emit("app-usage", HashMap::<String, AppUsage>::new());
+        return;
+    }
+    let mut system = System::new_all();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    let mut usage = HashMap::new();
+    for (app_id, pid) in pids {
+        if let Some(process) = system.process(Pid::from_u32(pid)) {
+            usage.insert(
+                app_id,
+                AppUsage {
+                    cpu: process.cpu_usage(),
+                    memory: process.memory(),
+                },
+            );
+        }
+    }
+    let _ = app_handle.emit("app-usage", usage);
+}
+
 #[tauri::command]
 async fn get_app_logs(state: State<'_, AppState>, id: String) -> Result<Vec<String>, String> {
     let logs = state.logs.lock().await;
@@ -854,6 +890,14 @@ pub fn run() {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                     cleanup_and_sync(&app_handle).await;
+                }
+            });
+
+            let usage_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    emit_app_usage(&usage_handle).await;
                 }
             });
 
