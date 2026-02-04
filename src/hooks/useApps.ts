@@ -338,6 +338,18 @@ export function useApps({
     [removeProxyRoute]
   );
 
+  const restartApp = useCallback(
+    async (app: App) => {
+      await stopApp(app.id);
+      await startApp(app);
+    },
+    [stopApp, startApp]
+  );
+
+  const clearLogs = useCallback((appId: string) => {
+    setLogs((prev) => ({ ...prev, [appId]: [] }));
+  }, []);
+
   const updateApp = useCallback(
     async (editingApp: App, originalApp: App | undefined) => {
       if (!db) return;
@@ -415,6 +427,8 @@ export function useApps({
     removeApp,
     startApp,
     stopApp,
+    restartApp,
+    clearLogs,
     updateApp,
     handleOpenInBrowser,
     loadApps,

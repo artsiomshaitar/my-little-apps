@@ -45,6 +45,8 @@ function AppComponent() {
     removeApp,
     startApp,
     stopApp,
+    restartApp,
+    clearLogs,
     updateApp,
     handleOpenInBrowser,
     isDbReady,
@@ -160,6 +162,8 @@ function AppComponent() {
               isProxyOperational={isProxyOperational}
               onEdit={() => setEditingApp({ ...selectedApp })}
               onRemove={handleRemoveApp}
+              onRestart={() => restartApp(selectedApp)}
+              onClearLogs={() => clearLogs(selectedApp.id)}
             />
           ) : (
             <EmptyAppDetails hasApps={apps.length > 0} />

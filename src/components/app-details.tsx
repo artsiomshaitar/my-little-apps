@@ -27,9 +27,10 @@ const LogLine = memo(function LogLine({ log }: LogLineProps) {
 
 interface AppLogsProps {
   logs: LogEntry[];
+  onClear?: () => void;
 }
 
-const AppLogs = memo(function AppLogs({ logs }: AppLogsProps) {
+const AppLogs = memo(function AppLogs({ logs, onClear }: AppLogsProps) {
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -40,10 +41,20 @@ const AppLogs = memo(function AppLogs({ logs }: AppLogsProps) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="px-4 py-2 border-b border-border">
+      <div className="px-4 py-2 border-b border-border flex items-center justify-between">
         <span className="text-xs text-muted-foreground uppercase tracking-wider">
           logs
         </span>
+        {onClear ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={onClear}
+          >
+            clear
+          </Button>
+        ) : null}
       </div>
       <ScrollArea className="flex-1 min-h-0 bg-[oklch(0.1_0.005_285.823)]">
         <div className="p-4 text-xs leading-relaxed">
@@ -161,6 +172,8 @@ interface AppDetailsProps {
   isProxyOperational: boolean | undefined;
   onEdit: () => void;
   onRemove: () => void;
+  onRestart: () => void | Promise<void>;
+  onClearLogs: () => void;
 }
 
 export const AppDetails = memo(function AppDetails({
@@ -172,6 +185,8 @@ export const AppDetails = memo(function AppDetails({
   isProxyOperational,
   onEdit,
   onRemove,
+  onRestart,
+  onClearLogs,
 }: AppDetailsProps) {
   const handleRemove = useCallback(async () => {
     const shouldRemove = await confirm("Remove this app?", {
@@ -190,12 +205,22 @@ export const AppDetails = memo(function AppDetails({
           <span className="text-muted-foreground">&gt;</span>
           <h2 className="text-sm font-semibold">{app.name}</h2>
           {isRunning ? (
-            <Badge
-              variant="outline"
-              className="text-xs bg-success/10 text-success border-success/30"
-            >
-              running
-            </Badge>
+            <>
+              <Badge
+                variant="outline"
+                className="text-xs bg-success/10 text-success border-success/30"
+              >
+                running
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={onRestart}
+              >
+                restart
+              </Button>
+            </>
           ) : null}
         </div>
         <div className="flex gap-2">
@@ -248,7 +273,7 @@ export const AppDetails = memo(function AppDetails({
         ) : null}
       </div>
 
-      <AppLogs logs={logs} />
+      <AppLogs logs={logs} onClear={onClearLogs} />
     </section>
   );
 });

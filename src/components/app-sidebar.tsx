@@ -2,7 +2,14 @@ import { memo } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import type { App, AppUsage, AppsUsage, RunningApps, ProxyServiceStatus } from "@/types";
+import type {
+  App,
+  AppUsage,
+  AppsUsage,
+  RunningApps,
+  ProxyServiceStatus,
+} from "@/types";
+import { Badge } from "./ui/badge";
 
 function formatMB(bytes: number): string {
   return (bytes / 1024 / 1024).toFixed(1);
@@ -39,11 +46,15 @@ const AppListItem = memo(function AppListItem({
   onOpen,
 }: AppListItemProps) {
   const usageLine =
-    isRunning && port
-      ? usage
-        ? `${usage.cpu.toFixed(1)}% CPU · ${formatMB(usage.memory)} MB`
-        : "—% CPU · — MB"
-      : null;
+    isRunning && port ? (
+      usage ? (
+        <span>
+          {usage.cpu.toFixed(1)}% CPU · {formatMB(usage.memory)} MB
+        </span>
+      ) : (
+        "—% CPU · — MB"
+      )
+    ) : null;
 
   return (
     <div
@@ -52,7 +63,7 @@ const AppListItem = memo(function AppListItem({
         "group px-3 py-2 cursor-pointer border-l-3 transition-colors",
         isSelected
           ? "bg-accent border-l-primary"
-          : "border-l-transparent hover:bg-muted/50"
+          : "border-l-transparent hover:bg-muted/50",
       )}
     >
       <div className="flex items-center justify-between gap-2">
