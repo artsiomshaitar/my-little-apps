@@ -386,18 +386,17 @@ async fn start_app(
         "sh".into()
     };
 
-    let c_string = if shell_basename == "zsh" {
-        r#"source ~/.zprofile 2>/dev/null; source ~/.zshrc 2>/dev/null; eval "$MY_APP_CMD""#
-    } else if shell_basename == "bash" {
-        r#"source ~/.bash_profile 2>/dev/null; source ~/.bashrc 2>/dev/null; eval "$MY_APP_CMD""#
+    let c_string = r#"eval "$MY_APP_CMD""#;
+    let shell_args: Vec<&str> = if shell_basename == "zsh" || shell_basename == "bash" {
+        vec!["-i", "-l", "-c", c_string]
     } else {
-        r#"eval "$MY_APP_CMD""#
+        vec!["-c", c_string]
     };
 
     let shell = app_handle.shell();
     let cmd = shell
         .command(&shell_basename)
-        .args(["-c", c_string])
+        .args(shell_args)
         .current_dir(&path)
         .env("PORT", actual_port.to_string())
         .env("MY_APP_CMD", command.trim());

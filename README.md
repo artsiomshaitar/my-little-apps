@@ -228,6 +228,10 @@ Apps are started with the `PORT` environment variable set to the assigned port. 
 2. Ensure "Start manager on login" is checked
 3. Check System Preferences > Login Items for "My Little Apps"
 
+### App fails with Node/native module version error
+
+If the app uses native Node modules (e.g. `better-sqlite3`), the Node version used when the manager starts the app must match the one used to build those modules. The manager runs each app in a login + interactive shell so it should get the same Node (e.g. from nvm/fnm) as your terminal. If the error persists, run `npm rebuild` or `bun install` in the app directory using the same Node version that the manager will use.
+
 ### Database issues
 
 To reset all data, delete the database file:
